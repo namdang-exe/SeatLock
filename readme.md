@@ -15,19 +15,28 @@ Every session follows a strict start and end ritual to maintain context across s
 
 Open a new terminal, navigate to the project root, type `claude` and paste this prompt:
 ```
-Before we do anything, read these files in order:
-1. docs/PROJECT_PLAN.md
-2. docs/CONTEXT.md
-3. docs/open-questions.md
-4. Any files listed as completed in PROJECT_PLAN.md
+I am sharing three files with you. Read all three before doing anything else:
+- CONTEXT.md        — all architecture decisions, key numbers, confirmed services
+- INDEX.md          — navigation map for the entire project including stage summary
+- open-questions.md — all design questions (resolved, reference only)
 
-When done, tell me:
-- What phase and section we are on
-- A bullet summary of every decision made so far
-- What open questions are unresolved
-- What we are working on today
+We are building SeatLock — a distributed reservation platform with real-time
+availability and concurrency-safe booking.
 
-Do not start any work until I confirm. Wait for me to say "let's continue."
+Phase 0 (system design) is complete. You are now implementing the project.
+
+Once you have read the three files above:
+1. Check the stage summary table in INDEX.md to find the first stage 
+   that is NOT STARTED or IN PROGRESS
+2. Read that stage's full detail in CODING_PLAN.md before we begin
+3. Then tell me:
+   - Which stage we are on
+   - What it builds and what the acceptance criteria are
+   - Which ADRs or deep dive decisions apply
+   - Any questions before we begin
+
+Do not read CODING_PLAN.md in full — only read the current stage section.
+Do not start writing any code yet. Wait for me to say "let's continue."
 ```
 
 ---
@@ -36,25 +45,46 @@ Do not start any work until I confirm. Wait for me to say "let's continue."
 
 Before closing any terminal, paste this prompt:
 ```
-Before I close this session, do the following in order:
+Before we close this session, do the following in order. 
+Do not skip any step.
 
-1. Update docs/CONTEXT.md
-   - Set the current phase, section, and milestone status
-   - Add a one-line "We decided X because Y" summary for every decision made this session
-   - Update all file pointers to include anything new we created
-   - Flag anything unresolved
+1. UPDATE docs/CODING_PLAN.md
+   - Mark the current stage as COMPLETE or IN PROGRESS
+   - Note exactly where we stopped if IN PROGRESS
+   - If COMPLETE, confirm all acceptance criteria were met
 
-2. Update docs/PROJECT_PLAN.md
-   - Check off everything completed this session
-   - Update the Current Status block at the top with today's date
+2. UPDATE docs/CONTEXT.md
+   - Add any new decisions made this session as "We chose X over Y because Z"
+   - Update current phase and stage status
+   - Add any new constraints or rules that emerged during implementation
 
-3. Update docs/open-questions.md
-   - Add any unresolved questions from this session
-   - Mark any previously open questions we resolved today as done
+3. UPDATE docs/INDEX.md
+   - Update the stage status table to reflect current progress
+   - Add any new files we created to the relevant sections
+   - Add any new domain error codes, Redis keys, or API endpoints 
+     that were implemented this session
 
-4. Confirm what files were created or modified this session and give me a one-paragraph summary of what we accomplished.
+4. UPDATE docs/open-questions.md
+   - Mark any questions we resolved this session as resolved
+   - Add any new questions that came up during implementation
 
-Be specific in every file. Future Claude sessions will read these files cold with no memory of this conversation.
+5. CREATE a session summary
+   Write a short entry at the top of docs/milestones/session-log.md:
+   
+   ## Session [date] — Stage N: [stage name]
+   - What we completed
+   - What was left incomplete and exactly where we stopped
+   - Any decisions made that deviate from the original design
+   - Any gotchas or surprises discovered during implementation
+   - What the next session should do first
+
+6. CONFIRM when done
+   Tell me:
+   - Every file that was modified
+   - The exact status of the current stage
+   - The first thing the next session should do when it starts
+
+Do not close until all six steps are complete.
 ```
 
 ---

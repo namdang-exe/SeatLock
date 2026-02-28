@@ -1,8 +1,8 @@
 # SeatLock — Session Context
 
-> **Read this file first in every new session.**
-> Every session must update this file before ending.
-> For phase/milestone tracking see `docs/PROJECT_PLAN.md`.
+> **This file is fed to every new session alongside INDEX.md, CODING_PLAN.md, and open-questions.md.**
+> At session end: update the Current Phase & Status table and note any new implementation decisions made.
+> For full phase/milestone tracking see `docs/PROJECT_PLAN.md`.
 
 ---
 
@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 0 — Design Only** (no implementation code) |
+| Phase | **Phase 1 — Foundation** (NOT STARTED — see CODING_PLAN.md Stage 1) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -170,18 +170,39 @@
 
 ## Files Written So Far
 
+> For a complete, navigable listing of every file see `docs/INDEX.md`.
+
+**Navigation:**
+| File | Purpose |
+|------|---------|
+| `docs/INDEX.md` | Master navigation index — find anything in 10 seconds |
+| `docs/CODING_PLAN.md` | 16-stage implementation plan — current stage + exact operation sequences |
+| `docs/PROJECT_PLAN.md` | Phase/milestone tracker |
+| `docs/open-questions.md` | All design questions and resolutions |
+| `docs/M0-phase0-complete.md` | Phase 0 sign-off — all decisions, numbers, compromises |
+
+**Design (Phase 0 — complete):**
 | File | Contents |
 |------|----------|
-| `docs/PROJECT_PLAN.md` | Phase tracker — what is done, what is next across all phases |
-| `docs/CONTEXT.md` | This file — decisions, numbers, continuation prompt |
-| `docs/open-questions.md` | Every unresolved question from the interview |
-| `docs/system-design/01-requirements.md` | Full requirements: functional, non-functional, out-of-scope, alternatives rejected |
-| `docs/system-design/02-core-entities.md` | All 5 entities: fields, state machines, lifecycle, ownership, alternatives rejected |
-| `docs/system-design/03-api-interface.md` | Full API surface: all endpoints, request/response shapes, error codes, decision rationale |
-| `docs/system-design/04-data-flow.md` | All 5 flows (hold creation, booking confirmation, hold expiry, cancellation, availability query); full Postgres DDL; Redis schema |
-| `docs/system-design/05-high-level-design.md` | Service boundaries, communication patterns, service discovery, ALB routing, inter-service auth, system topology diagram |
-| `docs/diagrams/02-service-architecture.md` | Mermaid service architecture diagram — all 4 services, ALB, Redis, SQS, Postgres, Vault, Cloud Map, communication patterns |
-| `docs/system-design/06-deep-dives.md` | Four deep dives: crash recovery (OQ-19), cache invalidation (OQ-20), Redis fallback (OQ-21), Vault startup (OQ-22) |
+| `docs/system-design/01-requirements.md` | Functional + non-functional requirements, out-of-scope |
+| `docs/system-design/02-core-entities.md` | 5 entities: fields, state machines, ownership |
+| `docs/system-design/03-api-interface.md` | All endpoints, request/response shapes, error codes |
+| `docs/system-design/04-data-flow.md` | 5 flows, Postgres DDL (all tables), Redis schema |
+| `docs/system-design/05-high-level-design.md` | Service boundaries, communication, ALB routing, inter-service auth |
+| `docs/system-design/06-deep-dives.md` | Crash recovery, cache invalidation, Redis fallback, Vault startup |
+| `docs/decisions/ADR-001.md` | Microservices architecture |
+| `docs/decisions/ADR-002.md` | Redis SETNX as primary concurrency gate |
+| `docs/decisions/ADR-003.md` | booking-service owns Hold lifecycle |
+| `docs/decisions/ADR-004.md` | availability-service merged into venue-service |
+| `docs/decisions/ADR-005.md` | Async SQS for booking → notification |
+| `docs/decisions/ADR-006.md` | Shared Postgres cluster (Phase 0 compromise) |
+| `docs/decisions/ADR-007.md` | Service JWT for inter-service auth |
+| `docs/decisions/ADR-008.md` | Postgres-before-Redis-DEL operation order |
+| `docs/diagrams/01-system-context.md` | System context — external actors and dependencies |
+| `docs/diagrams/02-service-architecture.md` | Service architecture Mermaid diagram |
+| `docs/diagrams/03-booking-flow-sequence.md` | Sequence diagrams: hold, confirm, expiry |
+| `docs/diagrams/04-data-model-erd.md` | ERD — all 5 tables, PKs, FKs, indexes |
+| `docs/diagrams/05-infrastructure.md` | AWS infrastructure topology |
 
 ---
 
@@ -223,49 +244,54 @@ Full list with resolution notes: `docs/open-questions.md`
 
 ---
 
-## How to Continue in a New Session (Phase 1)
+## How to Continue in a New Session
+
+> **New session workflow:** The user will feed you these four files at the start of every session:
+> `docs/CONTEXT.md` (this file) · `docs/INDEX.md` · `docs/CODING_PLAN.md` · `docs/open-questions.md`
+> You do not need to read any other files to get started — everything needed is in these four.
 
 ```
-You are starting Phase 1 of SeatLock — a distributed reservation platform
-with real-time availability and concurrency-safe booking.
+You are implementing SeatLock — a distributed reservation platform with
+real-time availability and concurrency-safe booking.
 
-Phase 0 (system design) is COMPLETE. All decisions are finalized.
-Phase 1 goal: user-service + venue-service running locally. No booking logic yet.
+You have been given four files: CONTEXT.md, INDEX.md, CODING_PLAN.md,
+open-questions.md. That is your complete context. Do not ask to read
+other files unless you need a specific detail during implementation.
 
-== FIRST: READ THESE FILES BEFORE DOING ANYTHING ELSE ==
-1. docs/CONTEXT.md                    — all decisions and current status
-2. docs/PROJECT_PLAN.md               — phase/milestone tracker
-3. docs/M0-phase0-complete.md         — Phase 0 sign-off and Phase 1 starting state
-4. docs/system-design/03-api-interface.md  — API shapes for user-service and venue-service
-
-== CONFIRMED TECH STACK (do not question, do not re-raise) ==
-Backend:        Java 21, Spring Boot 3.x, Spring Security + JWT,
-                Spring Data JPA, Spring Data Redis, Spring Actuator
-Data:           PostgreSQL/RDS (source of truth), Redis/ElastiCache
-                (holds + cache), Flyway
-Infrastructure: AWS ECS Fargate, RDS, ElastiCache, ALB,
-                HashiCorp Vault, Docker + Docker Compose
-Observability:  Prometheus, Grafana, Spring Actuator, Blackbox Exporter
-Frontend:       React 18 + TypeScript, Axios, React Query
-DevOps:         GitHub Actions, Terraform
-Messaging:      AWS SQS (booking-service → notification-service)
-
-== PHASE 1 DELIVERABLES ==
-- user-service: registration, login, JWT issuance (Spring Security)
-- venue-service: venue CRUD, slot CRUD, slot auto-generation (Mon–Fri 9–5, 1h)
-- Docker Compose: both services + Postgres + Redis running locally
-- Flyway migrations for both services
-- GitHub Actions CI: build + test on every PR
-
-== PHASE 0 COMPROMISES IN SCOPE FOR PHASE 1 ==
-- Extract slot_availability into booking-service DB (not Phase 1 — defer)
-- Full Redis-backed idempotency store (not Phase 1 — defer)
-- Rate limiting numeric limits on POST /holds (define in Phase 1)
+== CURRENT STATUS ==
+Phase 0 (system design): COMPLETE — all decisions are final, do not re-raise them.
+Phase 1+ (implementation): find the first stage marked NOT STARTED in
+CODING_PLAN.md Stage Overview table — that is where you begin.
 
 == YOUR JOB ==
-Help implement Phase 1 services one at a time.
-Follow the API shapes in 03-api-interface.md exactly.
-Write Flyway migrations before entity classes.
-Do not implement booking-service or Redis hold logic in Phase 1.
-After every session, update docs/CONTEXT.md and docs/PROJECT_PLAN.md.
+1. Find the current stage in CODING_PLAN.md (first NOT STARTED or IN PROGRESS).
+2. Mark it IN PROGRESS in CODING_PLAN.md before you begin.
+3. Implement exactly what the stage describes. Follow the exact operation
+   sequences in booking-service stages (7–10) — they are non-negotiable.
+4. When the stage's acceptance criteria are all met, mark it COMPLETE in
+   CODING_PLAN.md and update the Stage Overview table status line.
+5. At session end: update CONTEXT.md "Current Phase & Status" table if the
+   implementation phase changed. Note any new implementation decisions made.
+
+== NON-NEGOTIABLE RULES (do not question, do not deviate) ==
+Tech stack:     Java 21, Spring Boot 3.x, Spring Security, Spring Data JPA,
+                Spring Data Redis, Flyway, JUnit 5, Testcontainers
+                React 18 + TypeScript + TanStack Query v5 (frontend)
+API contract:   All endpoints exactly as in docs/system-design/03-api-interface.md
+Operation order POST /bookings: Postgres commits BEFORE Redis DEL (ADR-008)
+                Violation of this order introduces an unrecoverable crash window.
+Concurrency:    Redis SETNX is the hold gate. AND status='AVAILABLE' on Postgres
+                UPDATE is the secondary gate. Both must be present (ADR-002).
+Expiry job:     SELECT FOR UPDATE SKIP LOCKED, batch ≤500, retry 3× then halve.
+Cancellation:   DEL hold:{slotId} must fire (no-op safe) to clear stale crash keys.
+Tests:          Every stage requires both unit tests AND integration tests
+                (Testcontainers). No stage is complete without passing tests.
+Redis failure:  POST /holds returns 503. GET /venues/slots falls back to Postgres.
+
+== WHAT IS IN YOUR CONTEXT FILES ==
+CONTEXT.md      — every architecture decision made, key numbers, services, Vault secrets
+INDEX.md        — navigation map for all files; quick-ref for error codes, Redis keys,
+                  tech stack, key numbers, compromises to fix in Phase 1+
+CODING_PLAN.md  — 16 stages with acceptance criteria and exact operation sequences
+open-questions.md — all design questions resolved (reference only — nothing open)
 ```

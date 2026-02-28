@@ -92,10 +92,16 @@ Goal: Deployed to AWS, usable in browser.
 ---
 
 ## Open Questions
-See docs/open-questions.md
+See docs/open-questions.md (all resolved as of 2026-02-27)
 
 ## Key Decisions Made
 See docs/decisions/ for all ADRs
+
+## Implementation Plan
+See docs/CODING_PLAN.md for stage-by-stage implementation plan
+
+## Project Navigation
+See docs/INDEX.md for a complete navigation index of all project files
 ```
 
 ---
