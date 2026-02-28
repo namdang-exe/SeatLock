@@ -55,22 +55,24 @@
 
 ---
 
-## Section 5 — High-Level Design ❓ IN PROGRESS
+## Section 5 — High-Level Design ✅ COMPLETE
 
-| # | Status | Question | What is needed to resolve |
-|---|--------|----------|--------------------------|
-| OQ-15 | ❓ (in progress) | Are all proposed services the right boundaries? Specifically: should availability-service be merged into venue-service? | **Section 5 Q1 — question posed, awaiting answer.** hold-service merge into booking-service confirmed in Section 2. |
-| OQ-16 | ❓ | Which service pairs communicate synchronously vs. asynchronously? | Section 5 discussion. Critical for notification-service (likely async) and the hold-expiry flow. |
-| OQ-17 | ❓ | How do services discover each other inside ECS Fargate? AWS Cloud Map, hardcoded service DNS, or API gateway? | Section 5 discussion. Impacts infrastructure design and ALB routing strategy. |
+| # | Status | Question | Resolution |
+|---|--------|----------|------------|
+| OQ-15 | ✅ | Are all proposed services the right boundaries? Should availability-service merge into venue-service? | **RESOLVED 2026-02-24:** availability-service merged into venue-service. Availability is a read view over slot data that venue-service already owns. A separate service would require shared DB (violates isolation) or a synchronous HTTP hop on the hot read path. Venue-service now owns availability reads. booking-service continues to own cache invalidation (DEL on hold/confirm/cancel). |
+| OQ-16 | ✅ | Which service pairs communicate synchronously vs. asynchronously? | **RESOLVED 2026-02-25:** booking→notification: async SQS (fire-and-forget; user response does not depend on delivery; notification-service unavailability must not affect booking writes). booking→venue: sync HTTP for slot verification + shared Postgres for slot.status writes (Phase 0 pragmatic compromise; atomicity of slot UPDATE + holds INSERT cannot be broken by async). user→booking: no runtime call (JWT self-validates locally via Spring Security). |
+| OQ-17 | ✅ | How do services discover each other inside ECS Fargate? | **RESOLVED 2026-02-25:** AWS Cloud Map. ECS Fargate native integration — tasks auto-register/deregister on start/stop. Stable internal DNS (`http://venue-service.seatlock.local:8080`). No per-service internal ALB needed. |
+| Q4 | ✅ | ALB routing strategy — path-based rules, one ALB vs. per-service, API Gateway need? | **RESOLVED 2026-02-25:** Single public ALB with path-based listener rules. Four target groups: user-service (`/api/v1/auth/**`), venue-service (`/api/v1/venues/**`, `/api/v1/admin/**`), booking-service (`/api/v1/holds/**`, `/api/v1/bookings/**`). notification-service has no public endpoint. No API Gateway needed at 10k DAU. |
+| Q5 | ✅ | Inter-service auth — forward user JWT vs. service JWT vs. IAM roles vs. mTLS? | **RESOLVED 2026-02-25:** Service JWT. booking-service signs a short-lived JWT (`sub: booking-service`, `iss: seatlock-internal`) with a Vault-sourced shared secret. venue-service validates signature and `sub` claim. Chosen because: covers non-user callers (expiry job); defense-in-depth beyond security groups; simpler than SigV4; reuses existing Spring Security JWT infrastructure. |
 
 ---
 
-## Section 6 — Deep Dives ❓ NOT YET REACHED
+## Section 6 — Deep Dives ✅ ALL RESOLVED
 
-| # | Status | Question | What is needed to resolve |
-|---|--------|----------|--------------------------|
+| # | Status | Question | Resolution |
+|---|--------|----------|------------|
 | OQ-18 | ✅ | Concurrency strategy: Redis SETNX vs. optimistic locking vs. pessimistic locking? | **RESOLVED in Section 4:** Redis SETNX is the primary gate. `AND status='AVAILABLE'` on Postgres UPDATE is secondary gate. Section 6 deep dive will cover failure scenarios and recovery paths. |
-| OQ-19 | ❓ | Recovery path if booking-service crashes between releasing the Redis hold and inserting the Postgres booking record? | Section 6 Deep Dive A. Requires decision on saga pattern, outbox pattern, or idempotent retry. |
-| OQ-20 | ❓ | Cache invalidation strategy when a slot transitions AVAILABLE→HELD or HELD→AVAILABLE? | Section 6 Deep Dive B. Options: write-through, TTL-based expiry, pub/sub invalidation. |
-| OQ-21 | ❓ | Fallback behavior when Redis is unavailable — can bookings still be taken? | Section 6 Deep Dive C. Options: fall back to Postgres SELECT FOR UPDATE, reject all hold requests, read-only degraded mode. |
-| OQ-22 | ❓ | What happens if Vault is unreachable on service startup — fail fast or start with cached secrets? | Section 6 Deep Dive C. Impacts startup resilience and secret rotation strategy. |
+| OQ-19 | ✅ | Recovery path if booking-service crashes between releasing the Redis hold and inserting the Postgres booking record? | **RESOLVED Section 6 Deep Dive A:** Reorder `POST /bookings` — Postgres commits before Redis DEL. Add `DEL hold:{slotId}` to cancellation flow to clear stale crash artifacts. No saga or outbox needed. |
+| OQ-20 | ✅ | Cache invalidation strategy when a slot transitions AVAILABLE→HELD or HELD→AVAILABLE? | **RESOLVED Section 6 Deep Dive B:** DEL + 5s TTL is sufficient. Explicit DEL on every write is the fast path; TTL bounds worst-case staleness to 5s (within accepted tolerance). Write-through and pub/sub rejected. |
+| OQ-21 | ✅ | Fallback behavior when Redis is unavailable — can bookings still be taken? | **RESOLVED Section 6 Deep Dive C:** Read-only degraded mode. `POST /holds` returns 503. `GET /venues/{venueId}/slots` continues via Postgres fallback. No SELECT FOR UPDATE fallback write path. |
+| OQ-22 | ✅ | What happens if Vault is unreachable on service startup — fail fast or start with cached secrets? | **RESOLVED Section 6 Deep Dive D:** Fail fast on startup — container exits, ECS restarts with backoff. At runtime: hold in-memory secrets, degrade health endpoint, do not crash. Cached secrets on startup rejected (defeats secret rotation). |

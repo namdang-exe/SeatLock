@@ -2,9 +2,9 @@
 
 ## Current Status
 - Phase: 0 — System Design
-- Current Section: 5 — High-Level Design (IN PROGRESS — first question posed, awaiting answer)
-- Last Completed: Section 4 — Data Flow ✅ (reviewed and corrected 2026-02-19)
-- Last Updated: 2026-02-19
+- Current Section: Phase 1 — Foundation (NEXT)
+- Last Completed: Phase 0 — System Design ✅ COMPLETE (completed 2026-02-27)
+- Last Updated: 2026-02-27
 
 ---
 
@@ -17,22 +17,27 @@ any implementation begins.
 - [x] Section 2 — Core Entities → docs/system-design/02-core-entities.md
 - [x] Section 3 — API / Interface → docs/system-design/03-api-interface.md
 - [x] Section 4 — Data Flow → docs/system-design/04-data-flow.md (reviewed and corrected 2026-02-19)
-- [ ] Section 5 — High-Level Design → docs/system-design/05-high-level-design.md (IN PROGRESS)
-- [ ] Section 6 — Deep Dives → docs/system-design/06-deep-dives.md
+- [x] Section 5 — High-Level Design → docs/system-design/05-high-level-design.md
+- [x] Section 6 — Deep Dives → docs/system-design/06-deep-dives.md
 
 ### Part 2 — Diagrams
-- [ ] Diagram 1 — System Context → docs/diagrams/01-system-context.md
-- [ ] Diagram 2 — Service Architecture → docs/diagrams/02-service-architecture.md
-- [ ] Diagram 3 — Booking Flow Sequence → docs/diagrams/03-booking-flow-sequence.md
-- [ ] Diagram 4 — Data Model ERD → docs/diagrams/04-data-model-erd.md
-- [ ] Diagram 5 — Infrastructure → docs/diagrams/05-infrastructure.md
+- [x] Diagram 1 — System Context → docs/diagrams/01-system-context.md
+- [x] Diagram 2 — Service Architecture → docs/diagrams/02-service-architecture.md
+- [x] Diagram 3 — Booking Flow Sequence → docs/diagrams/03-booking-flow-sequence.md
+- [x] Diagram 4 — Data Model ERD → docs/diagrams/04-data-model-erd.md
+- [x] Diagram 5 — Infrastructure → docs/diagrams/05-infrastructure.md
 
 ### Part 2 — Documentation
-- [ ] All system-design/ files populated
-- [ ] All ADRs written
-- [ ] CONTEXT.md finalized
-- [ ] open-questions.md populated
-- [ ] M0-phase0-complete.md written
+- [x] system-design/01-requirements.md ✅
+- [x] system-design/02-core-entities.md ✅
+- [x] system-design/03-api-interface.md ✅
+- [x] system-design/04-data-flow.md ✅
+- [x] system-design/05-high-level-design.md ✅
+- [x] system-design/06-deep-dives.md ✅
+- [x] All ADRs written (ADR-001 through ADR-008) → docs/decisions/
+- [x] CONTEXT.md finalized
+- [x] open-questions.md finalized
+- [x] M0-phase0-complete.md written
 
 ---
 

@@ -11,15 +11,16 @@
 | Item | Status |
 |------|--------|
 | Phase | **Phase 0 — Design Only** (no implementation code) |
-| Part 1 — Design Interview | **In Progress** |
+| Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
 | Section 3 — API / Interface | ✅ COMPLETE → `docs/system-design/03-api-interface.md` |
 | Section 4 — Data Flow | ✅ COMPLETE → `docs/system-design/04-data-flow.md` |
-| Section 5 — High-Level Design | Not started |
-| Section 6 — Deep Dives | Not started |
-| Part 2 — Diagrams | Not started |
-| Part 2 — Documentation files | Not started |
+| Section 5 — High-Level Design | ✅ COMPLETE → `docs/system-design/05-high-level-design.md` |
+| Section 6 — Deep Dives | ✅ COMPLETE → `docs/system-design/06-deep-dives.md` |
+| Part 2 — Diagrams | ✅ COMPLETE (all 5 done) → `docs/diagrams/` |
+| Part 2 — Documentation + ADRs | ✅ COMPLETE → `docs/system-design/`, `docs/decisions/` |
+| Phase 0 milestone | ✅ COMPLETE → `docs/M0-phase0-complete.md` |
 
 ---
 
@@ -78,7 +79,7 @@
 - We decided **`POST /holds` is also all-or-nothing**: if any requested slot is unavailable, no holds are created for any slot in the request.
 - We decided the **error vocabulary uses domain-specific error codes** (`SLOT_NOT_AVAILABLE`, `HOLD_EXPIRED`, `CANCELLATION_WINDOW_CLOSED`, etc.) in the response body alongside the HTTP status, so clients can react programmatically without parsing message strings.
 - We decided **admin endpoints require a JWT role claim** (not a separate admin token) to keep auth simple in Phase 0.
-- We decided to keep **`confirmationNumber` (not `sessionId`) as the path identifier for `POST /bookings/{confirmationNumber}/cancel`** because `confirmationNumber` is the user-facing booking reference that both the frontend and support staff use; `sessionId` is internal hold-phase infrastructure that should not drive the API contract. Both identifiers exist at cancel time (cancel is only possible after a confirmed booking), but `confirmationNumber` is the resource identifier the user actually experiences. The JWT `userId` check is the real authorization gate — path-segment obscurity is not a security property we rely on.
+- We decided to keep **`confirmationNumber` (not `sessionId`) as the path identifier for `POST /bookings/{confirmationNumber}/cancel`** because `confirmationNumber` is the user-facing booking reference that both the frontend and support staff use; `sessionId` is internal hold-phase infrastructure that should not drive the API contract.
 - We decided the **`sessionId`/`confirmationNumber` dual-key pattern on Booking is intentional**: each key serves a different semantic role across the hold-to-confirm lifecycle. `sessionId` (UUID) is the internal transaction identity; `confirmationNumber` (human-readable) is the user-facing booking reference. Storing both as indexed columns on every Booking row is deliberate denormalization to avoid joins back through the Hold table.
 
 ### Data Flow Decisions (Section 4 — complete)
@@ -99,11 +100,40 @@
 - We decided **UTC is the date partitioning timezone for Phase 0** — venue-timezone-aware date filtering is deferred.
 - We decided **`AND status = 'BOOKED'` is added to the Postgres slot UPDATE in cancellation** as a belt-and-suspenders guard against double-releasing a slot.
 
-### Pending Decisions (Sections 5–6 — not yet made)
+### High-Level Design Decisions (Section 5 — complete)
 
-- Concurrency strategy: Redis SETNX vs. optimistic locking vs. pessimistic locking — **formally confirmed as SETNX in Section 4; deep-dive in Section 6**
-- Sync vs. async communication per service pair — **not yet decided (Section 5)**
-- Service boundary validation (availability-service vs. venue-service) — **Section 5 IN PROGRESS; first question posed, not yet answered**
+- We decided **`slot.status` stays on the Slot entity (Model A — denormalized status)** because availability is on the hot read path (every 5s poll) and we own all three write paths (hold, confirm, cancel), making the denormalization risk fully mitigated. A computed availability model (Model B) would require a multi-table join on every cache miss, breaking the <200ms latency target.
+- We decided **`availability-service` merges into `venue-service`** because availability is a read view over slot data that venue-service already owns. A separate service would require either shared DB access (violates service isolation) or a synchronous HTTP hop on the hot read path. Venue-service now owns: venue CRUD, slot CRUD + auto-generation, availability reads (Redis cache + Postgres fallback), and cache key management. booking-service continues to own cache invalidation (DEL on hold/confirm/cancel).
+- We confirmed the **proposed services are microservices** by the standard definition: each owns its own database, is independently deployable, and maps to a single bounded context. The architecture is intentionally microservices-first for learning purposes.
+- We decided **booking-service → notification-service is async (SQS)** because the user's HTTP response does not depend on notification delivery; if notification-service is unavailable the booking operation must not fail. booking-service publishes `HoldExpiredEvent`, `BookingConfirmedEvent`, `BookingCancelledEvent` to SQS; notification-service consumes and dispatches.
+- We decided **booking-service → venue-service uses sync HTTP for slot verification** (one call at hold creation to confirm slots exist and get venueId) and **shared Postgres cluster for slot.status writes** (Phase 0 pragmatic compromise). The slot.status UPDATE must be atomic with the holds INSERT — making it async would break the secondary Postgres safety gate for the ≤60s expiry lag window. True DB isolation is a Phase 1+ goal.
+- We decided **cache invalidation (DEL slots:{venueId}:{date}) is a direct Redis write by booking-service** — not a service call to venue-service.
+- We decided **user-service → booking-service has no runtime HTTP call** because booking-service validates JWTs locally via Spring Security, extracting userId and role from token claims. Account lifecycle events (deletion, suspension) are async Phase 1+.
+- We decided **AWS Cloud Map for internal service discovery** because ECS Fargate natively integrates with it — tasks auto-register/deregister on start/stop, providing stable internal DNS (`http://venue-service.seatlock.local:8080`) without manual IP management or per-service internal ALBs.
+- We decided **a single public-facing ALB with path-based listener rules** routes external traffic to four target groups: user-service (`/api/v1/auth/**`), venue-service (`/api/v1/venues/**`, `/api/v1/admin/**`), booking-service (`/api/v1/holds/**`, `/api/v1/bookings/**`). notification-service has no public endpoint. No API Gateway needed at 10k DAU.
+- We decided **Service JWT for inter-service auth** (booking-service → venue-service). booking-service signs a short-lived JWT (`sub: booking-service`, `iss: seatlock-internal`) with a Vault-sourced shared secret. venue-service validates signature and `sub` claim. This covers non-user callers (expiry job), provides defense-in-depth beyond security groups, and is simpler than SigV4 while reusing existing Spring Security JWT infrastructure.
+
+### Deep Dive Decisions (Section 6 — complete)
+
+- We decided **reorder `POST /bookings` so Postgres commits before Redis DEL** because a crash after DEL but before Postgres commit leaves orphaned state with no recovery path; Postgres is the source of truth, Redis DEL is best-effort cleanup (OQ-19 D-6.A.1).
+- We decided **add `DEL hold:{slotId}` to the cancellation flow** because a crash-induced stale Redis hold key blocks new holds on a genuinely available slot after cancellation; DEL on a missing key is a no-op so this is always safe (OQ-19 D-6.A.2).
+- We decided **DEL + 5s TTL is the cache invalidation strategy** — explicit DEL on every slot status write is the fast path; 5s TTL bounds worst-case staleness from the write-after-read race; write-through and pub/sub are rejected (OQ-20 D-6.B.1).
+- We decided **read-only degraded mode when Redis is unavailable** — `POST /holds` returns 503; `GET /venues/{venueId}/slots` continues via Postgres fallback; no Postgres `SELECT FOR UPDATE` fallback write path (OQ-21 D-6.C.1).
+- We decided **fail fast on startup if Vault is unreachable** — container exits, ECS restarts with backoff; cached secrets on startup are rejected because they defeat secret rotation (OQ-22 D-6.D.1).
+- We decided **hold in-memory secrets at runtime if Vault becomes unreachable** — degrade the health endpoint, alert via metrics, do not crash a running service over a transient Vault blip (OQ-22 D-6.D.2).
+
+---
+
+## Vault Secret Inventory
+
+| Secret | Used by |
+|--------|---------|
+| User JWT signing secret | user-service (sign), all services (verify) |
+| Service JWT signing secret | booking-service (sign), venue-service (verify) |
+| Postgres credentials (per service) | user-service, venue-service, booking-service |
+| Redis connection credentials | venue-service, booking-service |
+| AWS SQS credentials | booking-service (publish), notification-service (consume) |
+| SMTP / SMS / push API keys | notification-service |
 
 ---
 
@@ -125,16 +155,16 @@
 
 ---
 
-## Proposed Services (not yet validated — Section 5)
+## Confirmed Services
 
-| Service | Proposed Responsibility |
-|---------|------------------------|
+| Service | Responsibility |
+|---------|---------------|
 | user-service | Registration, login, JWT issuance, profile |
-| venue-service | Venue CRUD, slot CRUD (admin), venue/slot reads (users) |
-| availability-service | Real-time slot availability queries, cache layer — **merge into venue-service under discussion (OQ-15)** |
+| venue-service | Venue CRUD, slot CRUD + auto-generation (admin), slot reads (users), availability reads — Redis cache (`slots:{venueId}:{date}`, TTL=5s) + Postgres fallback |
+| booking-service | Hold creation, booking confirmation, cancellation, booking history, hold expiry job, Redis cache invalidation (DEL on hold/confirm/cancel), slot.status writes (Phase 0 shared Postgres) |
+| notification-service | Email + in-app + SMS dispatch (SQS consumer) |
+| ~~availability-service~~ | **Merged into venue-service** (OQ-15 resolved 2026-02-24) |
 | ~~hold-service~~ | **Merged into booking-service** (decided Section 2) |
-| booking-service | Booking confirmation, cancellation, booking history, hold creation, TTL management, hold expiry |
-| notification-service | Email + in-app + SMS dispatch |
 
 ---
 
@@ -149,6 +179,9 @@
 | `docs/system-design/02-core-entities.md` | All 5 entities: fields, state machines, lifecycle, ownership, alternatives rejected |
 | `docs/system-design/03-api-interface.md` | Full API surface: all endpoints, request/response shapes, error codes, decision rationale |
 | `docs/system-design/04-data-flow.md` | All 5 flows (hold creation, booking confirmation, hold expiry, cancellation, availability query); full Postgres DDL; Redis schema |
+| `docs/system-design/05-high-level-design.md` | Service boundaries, communication patterns, service discovery, ALB routing, inter-service auth, system topology diagram |
+| `docs/diagrams/02-service-architecture.md` | Mermaid service architecture diagram — all 4 services, ALB, Redis, SQS, Postgres, Vault, Cloud Map, communication patterns |
+| `docs/system-design/06-deep-dives.md` | Four deep dives: crash recovery (OQ-19), cache invalidation (OQ-20), Redis fallback (OQ-21), Vault startup (OQ-22) |
 
 ---
 
@@ -156,34 +189,54 @@
 
 Full list with resolution notes: `docs/open-questions.md`
 
-**Section 2 questions fully resolved — no blocking questions.**
-**Section 3 API shapes fully resolved — see `docs/system-design/03-api-interface.md`.**
-**Section 4 data flow fully resolved — see `docs/system-design/04-data-flow.md`.**
+**Sections 1–5 fully resolved — no blocking questions.**
 
 **OQ-10 RESOLVED:** Frontend polling every 5s (matches 5s cache TTL). SSE/WebSockets deferred.
 **OQ-11 PARTIAL (Phase 0):** `Idempotency-Key` required on `POST /holds` (becomes sessionId); `POST /bookings` deduplicates by sessionId. Full Redis-backed store is Phase 1.
 **OQ-12 RESOLVED:** URL path prefix `/api/v1/`. Header versioning deferred.
+**OQ-15 RESOLVED:** availability-service merged into venue-service (2026-02-24).
+**OQ-16 RESOLVED:** booking→notification async (SQS); booking→venue sync HTTP + shared Postgres; user→booking no runtime call.
+**OQ-17 RESOLVED:** AWS Cloud Map for internal service discovery.
+**Q4 RESOLVED:** Single ALB with path-based listener rules.
+**Q5 RESOLVED:** Service JWT for inter-service auth (booking-service → venue-service).
 
-**Blocking Section 5+ (not yet started):**
-- OQ-15: Are all proposed services the right boundaries? Should availability-service merge into venue-service?
-- OQ-16: Which service pairs communicate synchronously vs. asynchronously?
-- OQ-17: How do services discover each other inside ECS Fargate?
+**All Sections 1–6 fully resolved — no blocking questions.**
+
+**OQ-19 RESOLVED:** Reorder `POST /bookings` (Postgres before Redis DEL); add `DEL hold:{slotId}` to cancellation flow.
+**OQ-20 RESOLVED:** DEL + 5s TTL sufficient. Write-through and pub/sub rejected.
+**OQ-21 RESOLVED:** Read-only degraded mode when Redis unavailable. `POST /holds` → 503.
+**OQ-22 RESOLVED:** Fail fast on startup. In-memory hold at runtime with health degradation.
 
 ---
 
-## How to Continue in a New Session
+## Phase 0 Compromises to Address in Phase 1+
+
+| Compromise | Phase | Note |
+|------------|-------|------|
+| Shared Postgres cluster (booking-service writes slots.status) | Phase 1 | Extract slot_availability into booking-service's DB |
+| Full Redis-backed idempotency store | Phase 1 | Currently in-process dedup only |
+| Vault HA cluster | Phase 1+ | Currently single ECS task |
+| Venue-timezone date filtering | Phase 1+ | Currently UTC only |
+| Rate limiting numeric limits on POST /holds | Phase 1 | Endpoint identified; limits not set |
+| Asymmetric JWT (RS256) for inter-service auth | Phase 2+ | Currently symmetric HMAC |
+| Account lifecycle events (user deletion/suspension) | Phase 1+ | No user→booking async events yet |
+
+---
+
+## How to Continue in a New Session (Phase 1)
 
 ```
-You are continuing Phase 0 of SeatLock — a distributed reservation platform
+You are starting Phase 1 of SeatLock — a distributed reservation platform
 with real-time availability and concurrency-safe booking.
 
-Phase 0 is DESIGN ONLY. No implementation code. The output is a complete
-high-level system design document suite in docs/.
+Phase 0 (system design) is COMPLETE. All decisions are finalized.
+Phase 1 goal: user-service + venue-service running locally. No booking logic yet.
 
 == FIRST: READ THESE FILES BEFORE DOING ANYTHING ELSE ==
-1. docs/CONTEXT.md          — all decisions made and current status
-2. docs/PROJECT_PLAN.md     — phase/milestone tracker
-3. docs/system-design/01-requirements.md  — completed Section 1
+1. docs/CONTEXT.md                    — all decisions and current status
+2. docs/PROJECT_PLAN.md               — phase/milestone tracker
+3. docs/M0-phase0-complete.md         — Phase 0 sign-off and Phase 1 starting state
+4. docs/system-design/03-api-interface.md  — API shapes for user-service and venue-service
 
 == CONFIRMED TECH STACK (do not question, do not re-raise) ==
 Backend:        Java 21, Spring Boot 3.x, Spring Security + JWT,
@@ -195,118 +248,24 @@ Infrastructure: AWS ECS Fargate, RDS, ElastiCache, ALB,
 Observability:  Prometheus, Grafana, Spring Actuator, Blackbox Exporter
 Frontend:       React 18 + TypeScript, Axios, React Query
 DevOps:         GitHub Actions, Terraform
+Messaging:      AWS SQS (booking-service → notification-service)
 
-== PROPOSED SERVICES (not yet validated — to cover in Section 5) ==
-user-service, venue-service, availability-service,
-hold-service, booking-service, notification-service
+== PHASE 1 DELIVERABLES ==
+- user-service: registration, login, JWT issuance (Spring Security)
+- venue-service: venue CRUD, slot CRUD, slot auto-generation (Mon–Fri 9–5, 1h)
+- Docker Compose: both services + Postgres + Redis running locally
+- Flyway migrations for both services
+- GitHub Actions CI: build + test on every PR
 
-== KEY DECISIONS ALREADY MADE (do not re-ask) ==
-- Bookable unit: generic venue time slots (not numbered seats)
-- Hold duration: 30 minutes
-- Auth: JWT, registered users only, no guest booking
-- Payment: out of scope
-- Cancellation: allowed up to 24h before reservation; slot released immediately
-- Notifications (email + in-app + SMS): hold expired, booking confirmed,
-  booking canceled. NOT on hold created.
-- Multiple slots per booking transaction: YES
-- Admin: create venues/slots + view confirmed bookings only
-  (no hold visibility, no force-cancel)
-- Browse consistency: eventual, up to 5s staleness acceptable
-- Hold/book consistency: strong, zero double-booking tolerance
-- Degraded mode: read-only browsing acceptable during partial outage
-- Scale: 10,000 DAU, ~1,000 bookings/day, 200 peak concurrent,
-  ~50 holds/min peak
-- Latency: p99 browse < 200ms, p99 hold < 500ms
-- SLA: 99.9% uptime
-
-== WHERE WE ARE ==
-Sections 1, 2, 3, and 4 are COMPLETE (Section 4 was fully reviewed and corrected this session).
-Section 5 — High-Level Design is IN PROGRESS.
-First question posed: "Should availability-service merge into venue-service?"
-Resume by waiting for the user's answer to that question before proceeding.
-
-READ THESE COMPLETED FILES FIRST:
-- docs/system-design/01-requirements.md
-- docs/system-design/02-core-entities.md
-- docs/system-design/03-api-interface.md
-- docs/system-design/04-data-flow.md
-
-KEY ENTITY DECISIONS (do not re-ask):
-- 5 entities: User, Venue, Slot, Hold, Booking
-- Venue: address + city + state, capacity always 1, soft-delete (ACTIVE/INACTIVE)
-- Slot: duration = system constant (60 min), auto-generated Mon–Fri 9am–5pm,
-  state machine: AVAILABLE → HELD → BOOKED → AVAILABLE (no CANCELLED on Slot)
-- Cancellation: only if > 24h before slot start; slot immediately re-bookable
-- Hold: (holdId, sessionId, userId, slotId, expiresAt, status)
-  One Hold per slot, sessionId groups multi-slot transactions
-  Redis key deleted on confirm; Postgres Hold status → CONFIRMED
-  Owned by booking-service (hold-service merged in)
-- Booking: (bookingId, sessionId, confirmationNumber, userId, slotId, holdId,
-  status, createdAt, cancelledAt)
-  sessionId groups all Booking records in the same transaction
-  confirmationNumber: SL-{YYYYMMDD}-{4-digit-suffix} — SAME for all in session
-  State machine: CONFIRMED → CANCELLED only
-  Cancellation is session-level (by confirmationNumber), all-or-nothing
-
-KEY API DECISIONS (do not re-ask):
-- POST /bookings returns 201 Created
-- One confirmationNumber per session, stored redundantly on every Booking record
-- POST /bookings/{confirmationNumber}/cancel is idempotent and convergent: cancels remaining
-  CONFIRMED items; returns 200 if all already CANCELLED; 24h rule applies to CONFIRMED items only
-- POST /bookings is all-or-nothing: any expired hold → 409 for entire session
-- POST /holds is all-or-nothing: any unavailable slot → no holds created; Idempotency-Key REQUIRED
-- GET /venues/{venueId}/slots accepts ?date= (ISO 8601, strongly recommended) and ?status= (optional)
-- Error vocabulary: domain-specific error codes (SLOT_NOT_AVAILABLE, HOLD_EXPIRED, HOLD_MISMATCH,
-  CANCELLATION_WINDOW_CLOSED, MISSING_IDEMPOTENCY_KEY, etc.)
-
-KEY DATA FLOW DECISIONS (do not re-ask):
-- Concurrency gate: Redis SETNX (SET NX EX 1800), not SELECT FOR UPDATE
-- Slot.status updated to HELD in Postgres at hold time
-- AND status='AVAILABLE' guard on slot UPDATE in hold creation (row-count mismatch → 409, not 500)
-- Hold expiry: @Scheduled polling every 60s; SELECT FOR UPDATE SKIP LOCKED, batch ≤500;
-  retry 3× with backoff on deadlock/timeout; halve batch if exhausted
-- Availability cache: Redis key slots:{venueId}:{date}, TTL=5s; date = ISO 8601 YYYY-MM-DD; UTC timezone (Phase 0)
-- Frontend polls every 5s (matches cache TTL) — OQ-10 RESOLVED
-- API versioning: URL prefix /api/v1/ — OQ-12 RESOLVED
-- Idempotency (OQ-11 PARTIAL Phase 0):
-    POST /holds: Idempotency-Key header REQUIRED; value becomes sessionId;
-      duplicate request → return existing ACTIVE holds directly
-    POST /bookings: step 0 always checks for CONFIRMED bookings by sessionId;
-      duplicate request → return 201 with existing data
-    Full Redis-backed idempotency store: Phase 1
-- Booking confirmation errors: HOLD_EXPIRED (Redis key missing) vs HOLD_MISMATCH
-  (key exists, holdId doesn't match Postgres record) — both HTTP 409
-- Cancellation: convergent idempotency — loads all bookings (no status filter), cancels
-  remaining CONFIRMED, returns 200 if all already CANCELLED; holds → RELEASED;
-  AND status='BOOKED' guard on slot UPDATE
-
-STILL OPEN (blocking Section 5):
-- OQ-15: Are all proposed services the right boundaries? availability-service vs. venue-service?
-  (Section 5 IN PROGRESS — question posed, not yet answered)
-- OQ-16: Which service pairs communicate synchronously vs. asynchronously?
-- OQ-17: How do services discover each other inside ECS Fargate?
-
-== SECTION 5 — HIGH-LEVEL DESIGN ==
-IN PROGRESS. First question posed (service boundaries — availability-service vs. venue-service).
-Resume by waiting for the user's answer to:
-  "Should availability-service be merged into venue-service, or stay separate?
-   If separate, how does it access slot data without sharing the table?"
-
-Then cover remaining topics:
-2. Synchronous vs. asynchronous communication per service pair
-3. Service discovery inside ECS Fargate
-4. ALB routing strategy and API gateway need
-5. Inter-service auth (service-to-service JWT vs. IAM vs. mTLS)
+== PHASE 0 COMPROMISES IN SCOPE FOR PHASE 1 ==
+- Extract slot_availability into booking-service DB (not Phase 1 — defer)
+- Full Redis-backed idempotency store (not Phase 1 — defer)
+- Rate limiting numeric limits on POST /holds (define in Phase 1)
 
 == YOUR JOB ==
-Conduct the design interview one section at a time.
-Wait for user answers before proceeding.
-Push back on weak or vague answers.
-After Section 5 is complete, generate docs/system-design/05-high-level-design.md.
-
-After every session, update docs/CONTEXT.md:
-- New decisions made (format: "We decided X because Y")
-- New files written
-- Updated open questions
-- Updated continuation prompt
+Help implement Phase 1 services one at a time.
+Follow the API shapes in 03-api-interface.md exactly.
+Write Flyway migrations before entity classes.
+Do not implement booking-service or Redis hold logic in Phase 1.
+After every session, update docs/CONTEXT.md and docs/PROJECT_PLAN.md.
 ```
