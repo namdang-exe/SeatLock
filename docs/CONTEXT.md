@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (NOT STARTED — see CODING_PLAN.md Stage 1) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–2 complete, Stage 3 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -122,6 +122,12 @@
 - We decided **fail fast on startup if Vault is unreachable** — container exits, ECS restarts with backoff; cached secrets on startup are rejected because they defeat secret rotation (OQ-22 D-6.D.1).
 - We decided **hold in-memory secrets at runtime if Vault becomes unreachable** — degrade the health endpoint, alert via metrics, do not crash a running service over a transient Vault blip (OQ-22 D-6.D.2).
 
+### Implementation Decisions (Phase 1 — Stages 1–2)
+
+- We chose **`jvmArgs("-Dapi.version=1.44")`** over setting `DOCKER_API_VERSION` as an env var because Testcontainers 1.21.0 ships a shaded copy of docker-java whose `DefaultDockerClientConfig` reads the API version from the JVM system property `api.version`, not from the `DOCKER_API_VERSION` environment variable. Docker Desktop 4.60.1 enforces minimum API version 1.44; without this flag every Testcontainers request goes to `/v1.32/...` and gets HTTP 400. Added to every `integrationTest` task in all 4 service `build.gradle.kts` files.
+- We chose **`tcp://localhost:2375`** as the Docker transport for integration tests (via `DOCKER_HOST` Windows env var + `~/.gradle/gradle.properties dockerHost`) because TCP is enabled in Docker Desktop and confirmed working via curl. Named pipe (`docker_engine`) also connects but has the same API version constraint.
+- We added `docs/BUGS.md` as a permanent bug/fix log. Critical bugs resolved during implementation are documented there with symptom, root cause, fix, and files changed.
+
 ---
 
 ## Vault Secret Inventory
@@ -203,6 +209,16 @@
 | `docs/diagrams/03-booking-flow-sequence.md` | Sequence diagrams: hold, confirm, expiry |
 | `docs/diagrams/04-data-model-erd.md` | ERD — all 5 tables, PKs, FKs, indexes |
 | `docs/diagrams/05-infrastructure.md` | AWS infrastructure topology |
+| `docs/BUGS.md` | Critical bug/fix log — symptom, root cause, fix, files changed |
+
+**Implementation (Phase 1 — Stage 1 complete):**
+| File | Contents |
+|------|----------|
+| `{service}/build.gradle.kts` (×4) | Gradle build for each service — integrationTest source set, Testcontainers deps, `jvmArgs("-Dapi.version=1.44")` |
+| `{service}/src/integrationTest/java/.../AbstractIntegrationTest.java` (×4) | Base class — `@SpringBootTest`, `@ActiveProfiles("test")`, shared Testcontainers setup |
+| `{service}/src/integrationTest/java/.../*ApplicationIT.java` (×4) | Sample integration test — context loads + actuator health returns UP |
+| `{service}/src/test/resources/application-test.yml` (×4) | Test profile — Testcontainers dynamic datasource properties |
+| `.github/workflows/ci.yml` | CI workflow — runs `test` and `integrationTest` on every PR |
 
 ---
 

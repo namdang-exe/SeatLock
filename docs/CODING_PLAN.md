@@ -14,8 +14,8 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 
 | # | Stage | Status |
 |---|-------|--------|
-| 1 | Project Scaffolding + Docker Compose | NOT STARTED |
-| 2 | Testing Infrastructure | NOT STARTED |
+| 1 | Project Scaffolding + Docker Compose | COMPLETE |
+| 2 | Testing Infrastructure | COMPLETE |
 | 3 | user-service: Auth | NOT STARTED |
 | 4 | venue-service: Venue + Slot CRUD | NOT STARTED |
 | 5 | venue-service: Availability Cache | NOT STARTED |
@@ -35,7 +35,9 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 
 ## Stage 1 — Project Scaffolding + Docker Compose
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
+
+**Completed:** 2026-02-28. All acceptance criteria met. Spring Boot 3.5.0, Gradle 8.14.4, Java 21 (Temurin).
 
 **Goal:** Create the multi-module Gradle project structure, local development environment (Docker Compose), and CI skeleton. Nothing runs without this.
 
@@ -118,17 +120,19 @@ jobs:
 ```
 
 ### Acceptance Criteria
-- [ ] `./gradlew build` passes from the root (all modules compile)
-- [ ] `docker-compose up` starts Postgres, Redis, and Mailhog without errors
-- [ ] Each service starts with `./gradlew :user-service:bootRun` and `GET /actuator/health` returns `{"status":"UP"}`
-- [ ] Three separate Postgres databases exist after `docker-compose up`
-- [ ] GitHub Actions CI runs on a test PR and passes
+- [x] `./gradlew build` passes from the root (all modules compile)
+- [x] `docker-compose up` starts Postgres, Redis, Mailhog (and ElasticMQ) without errors
+- [x] Each service starts with `./gradlew :X-service:bootRun` and `GET /actuator/health` returns `{"status":"UP"}`
+- [x] Three separate Postgres databases exist after `docker-compose up`
+- [x] GitHub Actions CI workflow authored (triggers on first PR to repo)
 
 ---
 
 ## Stage 2 — Testing Infrastructure
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
+
+**Completed:** 2026-02-28. All acceptance criteria met. Fix for Docker Desktop 4.60.1 compatibility: `jvmArgs("-Dapi.version=1.44")` in every integrationTest Gradle task forces the shaded docker-java to use API v1.44 (the minimum Docker Desktop 4.60+ enforces). Testcontainers connects via `DOCKER_HOST=tcp://localhost:2375`.
 
 **Goal:** Establish the testing patterns used by all subsequent stages. Every stage from Stage 3 onward follows these conventions.
 

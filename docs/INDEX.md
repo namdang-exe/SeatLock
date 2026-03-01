@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | NOT STARTED — see CODING_PLAN.md Stage 1 |
-| Current implementation stage | None — ready to begin Stage 1 |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–2 complete, Stage 3 next |
+| Current implementation stage | Stage 3 — user-service: Auth |
 
 ---
 
@@ -28,6 +28,7 @@
 | Find the exact booking confirmation operation sequence | `docs/CODING_PLAN.md` → Stage 8 |
 | Find the exact cancellation operation sequence | `docs/CODING_PLAN.md` → Stage 10 |
 | Find the exact hold expiry job sequence | `docs/CODING_PLAN.md` → Stage 9 |
+| Look up a bug fix or environment workaround | `docs/BUGS.md` |
 | Understand why a decision was made | `docs/decisions/ADR-00N.md` (see ADR index below) |
 | See all architecture decisions summarised | `docs/CONTEXT.md` → Every Decision Made |
 | See what's unresolved / deferred | `docs/CONTEXT.md` → Phase 0 Compromises |
@@ -87,6 +88,7 @@
 | File | Contents |
 |------|----------|
 | `docs/milestones/session-log.md` | Session-by-session log — what was done, decisions made, where to continue next |
+| `docs/BUGS.md` | Critical bug/fix log — symptom, root cause, fix, files changed |
 
 ---
 
@@ -96,8 +98,8 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 
 | Stage | Name | Key output | Status |
 |-------|------|-----------|--------|
-| 1 | Project Scaffolding | Multi-module Gradle, Docker Compose, GitHub Actions CI | NOT STARTED |
-| 2 | Testing Infrastructure | JUnit 5, Testcontainers, integration test base classes | NOT STARTED |
+| 1 | Project Scaffolding | Multi-module Gradle, Docker Compose, GitHub Actions CI | COMPLETE |
+| 2 | Testing Infrastructure | JUnit 5, Testcontainers, integration test base classes | COMPLETE |
 | 3 | user-service: Auth | Register, login, JWT issuance, Spring Security filter | NOT STARTED |
 | 4 | venue-service: Venue + Slot CRUD | Venue/slot CRUD, slot auto-generation, admin endpoints | NOT STARTED |
 | 5 | venue-service: Availability Cache | Redis cache for slots, cache miss → Postgres fallback | NOT STARTED |

@@ -5,6 +5,49 @@
 
 ---
 
+## Session 2026-02-28 — Stage 2: Testing Infrastructure
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 2 — Testing Infrastructure (first NOT STARTED stage)
+**Ended at:** Stage 2 COMPLETE. Stage 3 is next.
+
+### What Was Accomplished
+
+- Verified all Stage 2 scaffolding from a previous session was in place: `integrationTest` source sets, `AbstractIntegrationTest` base classes, `application-test.yml` profiles, and CI workflow.
+- Created the 3 missing sample IT files (venue-service, booking-service, notification-service).
+- Fixed Testcontainers compatibility with Docker Desktop 4.60.1 (see Gotchas below).
+- All acceptance criteria confirmed passing:
+  - `./gradlew test` — unit tests pass (no Docker required)
+  - `./gradlew integrationTest` — all 4 services pass (Testcontainers + PostgreSQL containers spin up)
+  - CI workflow already configured for both tasks
+- Created `docs/BUGS.md` as a persistent bug/fix log.
+- Updated closing prompt in `readme.md` to include a step 5 for BUGS.md documentation.
+
+### Decisions Made This Session
+
+| Decision | Chosen | Rejected | Reason |
+|----------|--------|----------|--------|
+| Force docker-java API version | `jvmArgs("-Dapi.version=1.44")` in each Gradle integrationTest task | `DOCKER_API_VERSION` env var | Testcontainers 1.21.0 shaded docker-java reads API version from JVM system property `api.version`, not from the env var |
+| Docker transport | TCP `localhost:2375` (existing Windows env var) | Named pipe `docker_engine` or `docker_cli` | TCP confirmed working via curl; named pipe strategies have the same API version constraint and `docker_engine` is hardcoded in Testcontainers |
+
+### Gotchas / Surprises
+
+- **Docker Desktop 4.60.1 enforces minimum API version 1.44.** Testcontainers 1.21.0 defaults to 1.32 via its shaded docker-java, causing HTTP 400 on every Docker call. The shaded library does NOT read `DOCKER_API_VERSION` from the environment — it reads the JVM system property `api.version`. Setting `DOCKER_API_VERSION` as a Windows env var or Gradle environment() has zero effect on the shaded library.
+- **NpipeSocketClientProviderStrategy hardcodes `//./pipe/docker_engine`** — it cannot be redirected to `docker_cli` via testcontainers.properties. Forcing this strategy makes things worse.
+- **Docker Desktop 4.60.1 labels hint at `npipe://\\.\pipe\docker_cli`** in the 400 response body — this is the CLI socket for the new Docker CLI integration, not a drop-in replacement for testcontainers' named pipe strategy.
+
+### Where to Continue
+
+**Next session starts at:** `docs/CODING_PLAN.md` → Stage 3 — user-service: Auth
+
+**Feed these four files to the new session:**
+1. `docs/CONTEXT.md`
+2. `docs/INDEX.md`
+3. `docs/CODING_PLAN.md`
+4. `docs/open-questions.md`
+
+---
+
 ## Session 2026-02-27 — Phase 0 Complete + Implementation Plan Written
 
 **Phase:** 0 → 1 transition
