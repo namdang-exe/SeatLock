@@ -15,28 +15,32 @@ Every session follows a strict start and end ritual to maintain context across s
 
 Open a new terminal, navigate to the project root, type `claude` and paste this prompt:
 ```
-I am sharing three files with you. Read all three before doing anything else:
-- CONTEXT.md        — all architecture decisions, key numbers, confirmed services
-- INDEX.md          — navigation map for the entire project including stage summary
-- open-questions.md — all design questions (resolved, reference only)
+I am sharing four files with you. Read all four before doing anything else:
+  - CONTEXT.md        — all architecture decisions, key numbers, confirmed services
+  - INDEX.md          — navigation map for the entire project including stage summary
+  - CODING_PLAN.md    — full implementation plan (do NOT read in full — only read
+                        the section for the current stage, identified below)
+  - open-questions.md — all design questions (resolved, reference only)
 
-We are building SeatLock — a distributed reservation platform with real-time
-availability and concurrency-safe booking.
+  A fifth file, docs/BUGS.md, is available if you need to look up a past bug fix
+  or environment workaround — read it on demand, not upfront.
 
-Phase 0 (system design) is complete. You are now implementing the project.
+  We are building SeatLock — a distributed reservation platform with real-time
+  availability and concurrency-safe booking.
 
-Once you have read the three files above:
-1. Check the stage summary table in INDEX.md to find the first stage 
-   that is NOT STARTED or IN PROGRESS
-2. Read that stage's full detail in CODING_PLAN.md before we begin
-3. Then tell me:
-   - Which stage we are on
-   - What it builds and what the acceptance criteria are
-   - Which ADRs or deep dive decisions apply
-   - Any questions before we begin
+  Phase 0 (system design) is complete. You are now implementing the project.
 
-Do not read CODING_PLAN.md in full — only read the current stage section.
-Do not start writing any code yet. Wait for me to say "let's continue."
+  Once you have read the files above:
+  1. Check the stage summary table in INDEX.md to find the first stage
+     that is NOT STARTED or IN PROGRESS
+  2. Read only that stage's section in CODING_PLAN.md
+  3. Then tell me:
+     - Which stage we are on
+     - What it builds and what the acceptance criteria are
+     - Which ADRs or deep dive decisions apply
+     - Any questions before we begin
+
+  Do not start writing any code yet. Wait for me to say "let's continue."
 ```
 
 ---

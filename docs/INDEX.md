@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–3 complete, Stage 4 next |
-| Current implementation stage | Stage 4 — venue-service: Venue + Slot CRUD |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–4 complete, Stage 5 next |
+| Current implementation stage | Stage 5 — venue-service: Availability Cache |
 
 ---
 
@@ -98,6 +98,11 @@
 |--------|------|---------|--------|-------|
 | POST | `/api/v1/auth/register` | user-service | 201 Created / 409 EMAIL_ALREADY_EXISTS | 3 |
 | POST | `/api/v1/auth/login` | user-service | 200 OK / 401 INVALID_CREDENTIALS | 3 |
+| GET | `/api/v1/venues` | venue-service | 200 OK (public) | 4 |
+| POST | `/api/v1/admin/venues` | venue-service | 201 Created / 403 (non-ADMIN) | 4 |
+| PATCH | `/api/v1/admin/venues/{id}/status` | venue-service | 200 OK / 403 (non-ADMIN) | 4 |
+| GET | `/api/v1/venues/{venueId}/slots` | venue-service | 200 OK / 404 VENUE_NOT_FOUND (public) | 4 |
+| POST | `/api/v1/admin/venues/{venueId}/slots/generate` | venue-service | 201 Created / 403 (non-ADMIN) | 4 |
 
 ---
 
@@ -125,6 +130,35 @@
 | `user-service/src/test/java/com/seatlock/user/security/JwtServiceTest.java` | Unit tests: token issuance, claims parsing |
 | `user-service/src/integrationTest/java/com/seatlock/user/controller/AuthControllerIT.java` | 6 ITs: register, duplicate, login, bad pass, JWT auth, claims |
 
+### Stage 4 — venue-service: Venue + Slot CRUD
+
+| File | Purpose |
+|------|---------|
+| `venue-service/src/main/resources/db/migration/V1__create_venues.sql` | Flyway DDL: `venues` table |
+| `venue-service/src/main/resources/db/migration/V2__create_slots.sql` | Flyway DDL: `slots` table + indexes |
+| `venue-service/src/main/java/com/seatlock/venue/domain/Venue.java` | JPA entity; `Persistable<UUID>`; soft-delete via `VenueStatus` |
+| `venue-service/src/main/java/com/seatlock/venue/domain/Slot.java` | JPA entity; `Persistable<UUID>`; raw `venueId` UUID FK column |
+| `venue-service/src/main/java/com/seatlock/venue/domain/VenueStatus.java` | Enum: `ACTIVE`, `INACTIVE` |
+| `venue-service/src/main/java/com/seatlock/venue/domain/SlotStatus.java` | Enum: `AVAILABLE`, `HELD`, `BOOKED` |
+| `venue-service/src/main/java/com/seatlock/venue/repository/VenueRepository.java` | `findByStatus(VenueStatus)` |
+| `venue-service/src/main/java/com/seatlock/venue/repository/SlotRepository.java` | `findByVenueIdAndDay`, `findByVenueIdAndStartTimeBetween`, `findByVenueIdOrderByStartTimeAsc` |
+| `venue-service/src/main/java/com/seatlock/venue/dto/CreateVenueRequest.java` | Validated create-venue request |
+| `venue-service/src/main/java/com/seatlock/venue/dto/UpdateVenueStatusRequest.java` | Validated status patch request |
+| `venue-service/src/main/java/com/seatlock/venue/dto/GenerateSlotsRequest.java` | `fromDate`/`toDate` for slot generation |
+| `venue-service/src/main/java/com/seatlock/venue/dto/VenueResponse.java` | Venue API response record |
+| `venue-service/src/main/java/com/seatlock/venue/dto/SlotResponse.java` | Slot API response record (includes derived `endTime`) |
+| `venue-service/src/main/java/com/seatlock/venue/security/JwtConfig.java` | `@Bean JwtUtils` — separate config to avoid circular dep |
+| `venue-service/src/main/java/com/seatlock/venue/security/JwtAuthenticationFilter.java` | Bearer token → SecurityContextHolder via `JwtUtils` from common |
+| `venue-service/src/main/java/com/seatlock/venue/security/SecurityConfig.java` | Stateless chain; GETs public; `/api/v1/admin/**` → ADMIN role |
+| `venue-service/src/main/java/com/seatlock/venue/service/SlotGenerationService.java` | Mon–Fri 09:00–17:00 UTC, 60-min blocks, duplicate-safe bulk insert |
+| `venue-service/src/main/java/com/seatlock/venue/service/VenueService.java` | All venue+slot business logic; status filter in app layer |
+| `venue-service/src/main/java/com/seatlock/venue/controller/VenueController.java` | `GET /api/v1/venues`, `GET /api/v1/venues/{id}/slots` |
+| `venue-service/src/main/java/com/seatlock/venue/controller/AdminVenueController.java` | `POST /api/v1/admin/venues`, `PATCH /{id}/status`, `POST /{id}/slots/generate` |
+| `venue-service/src/main/java/com/seatlock/venue/exception/VenueNotFoundException.java` | Domain exception → 404 VENUE_NOT_FOUND |
+| `venue-service/src/main/java/com/seatlock/venue/exception/GlobalExceptionHandler.java` | Maps domain exceptions → HTTP responses |
+| `venue-service/src/test/java/com/seatlock/venue/service/SlotGenerationServiceTest.java` | 4 unit tests: weekdays only, correct times, skip duplicates, weekend empty |
+| `venue-service/src/integrationTest/java/com/seatlock/venue/controller/VenueControllerIT.java` | 11 ITs: CRUD, auth, generate, date filter, status filter, 404s, endTime |
+
 ---
 
 ## Implementation Plan
@@ -136,7 +170,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 1 | Project Scaffolding | Multi-module Gradle, Docker Compose, GitHub Actions CI | COMPLETE |
 | 2 | Testing Infrastructure | JUnit 5, Testcontainers, integration test base classes | COMPLETE |
 | 3 | user-service: Auth | Register, login, JWT issuance, Spring Security filter | COMPLETE |
-| 4 | venue-service: Venue + Slot CRUD | Venue/slot CRUD, slot auto-generation, admin endpoints | NOT STARTED |
+| 4 | venue-service: Venue + Slot CRUD | Venue/slot CRUD, slot auto-generation, admin endpoints | COMPLETE |
 | 5 | venue-service: Availability Cache | Redis cache for slots, cache miss → Postgres fallback | NOT STARTED |
 | 6 | booking-service: Foundation + Service JWT | booking-service setup, Flyway migrations, Service JWT handshake | NOT STARTED |
 | 7 | booking-service: Hold Creation | POST /holds — SETNX gate, all-or-nothing, Postgres writes | NOT STARTED |

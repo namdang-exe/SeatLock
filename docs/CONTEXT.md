@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–3 complete, Stage 4 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–4 complete, Stage 5 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -122,7 +122,7 @@
 - We decided **fail fast on startup if Vault is unreachable** — container exits, ECS restarts with backoff; cached secrets on startup are rejected because they defeat secret rotation (OQ-22 D-6.D.1).
 - We decided **hold in-memory secrets at runtime if Vault becomes unreachable** — degrade the health endpoint, alert via metrics, do not crash a running service over a transient Vault blip (OQ-22 D-6.D.2).
 
-### Implementation Decisions (Phase 1 — Stages 1–2)
+### Implementation Decisions (Phase 1 — Stages 1–4)
 
 - We chose **`jvmArgs("-Dapi.version=1.44")`** over setting `DOCKER_API_VERSION` as an env var because Testcontainers 1.21.0 ships a shaded copy of docker-java whose `DefaultDockerClientConfig` reads the API version from the JVM system property `api.version`, not from the `DOCKER_API_VERSION` environment variable. Docker Desktop 4.60.1 enforces minimum API version 1.44; without this flag every Testcontainers request goes to `/v1.32/...` and gets HTTP 400. Added to every `integrationTest` task in all 4 service `build.gradle.kts` files.
 - We chose **`Persistable<UUID>`** over `@GeneratedValue(strategy = UUID)` with a pre-initialized field because initializing `userId = UUID.randomUUID()` in the field declaration makes Hibernate treat the entity as existing (non-null ID → UPDATE instead of INSERT). Implementing `Persistable<UUID>` with `isNew = true` on construction and `@PostPersist/@PostLoad` to flip it correctly signals new vs. existing to Spring Data. This also lets unit tests use a real UUID without JPA.
@@ -131,6 +131,10 @@
 - We chose **permit `/error`** in `SecurityConfig` because Tomcat forwards unhandled exceptions to `/error`. Without permitting this path, the error response itself gets intercepted by Security → returns 401 instead of the actual error status (500, 409, etc.).
 - We chose **`tcp://localhost:2375`** as the Docker transport for integration tests (via `DOCKER_HOST` Windows env var + `~/.gradle/gradle.properties dockerHost`) because TCP is enabled in Docker Desktop and confirmed working via curl. Named pipe (`docker_engine`) also connects but has the same API version constraint.
 - We added `docs/BUGS.md` as a permanent bug/fix log. Critical bugs resolved during implementation are documented there with symptom, root cause, fix, and files changed.
+- We chose **`JwtConfig` as a separate `@Configuration` class** for the `JwtUtils` bean in venue-service because defining `JwtUtils` as a `@Bean` inside `SecurityConfig` creates a circular dependency: `SecurityConfig` → `JwtAuthenticationFilter` → `JwtUtils` (in `SecurityConfig`) → cycle. A separate config class breaks the cycle cleanly.
+- We chose **raw `@Column(name = "venue_id") UUID` on Slot** (no `@ManyToOne` relationship) because the service never navigates from Slot to Venue at runtime; the raw UUID avoids unnecessary lazy-load configuration.
+- We chose **GET endpoints fully public** (no Bearer token required) for venue-service browse endpoints (`GET /venues`, `GET /venues/{id}/slots`) because "browse before login" is natural product behaviour and avoids coupling the browsing experience to auth availability.
+- We confirmed **status filter applied in service/app layer** (not SQL) on the slot query so the full slot list can be stored as a single Redis cache key in Stage 5 and any status-filtered variant can be served from it without a separate cache entry.
 
 ---
 

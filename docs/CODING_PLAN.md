@@ -17,7 +17,7 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 1 | Project Scaffolding + Docker Compose | COMPLETE |
 | 2 | Testing Infrastructure | COMPLETE |
 | 3 | user-service: Auth | COMPLETE |
-| 4 | venue-service: Venue + Slot CRUD | NOT STARTED |
+| 4 | venue-service: Venue + Slot CRUD | COMPLETE |
 | 5 | venue-service: Availability Cache | NOT STARTED |
 | 6 | booking-service: Foundation + Service JWT | NOT STARTED |
 | 7 | booking-service: Hold Creation | NOT STARTED |
@@ -300,7 +300,7 @@ CREATE INDEX idx_users_email ON users (email);
 
 ## Stage 4 — venue-service: Venue + Slot CRUD
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** Venue and slot management. No Redis cache yet — Postgres only. Admin endpoints protected by JWT role claim.
 
@@ -377,16 +377,16 @@ Apply `?status=` filter in the application layer (not SQL). Return `endTime` der
 - Integration: create venue (ADMIN), get venues (USER), generate slots, get slots by date
 
 ### Acceptance Criteria
-- [ ] ADMIN can create a venue (`POST /api/v1/admin/venues`)
-- [ ] USER can browse ACTIVE venues (`GET /api/v1/venues`)
-- [ ] ADMIN can generate slots for a venue for a date range
-- [ ] Generated slots are Mon–Fri only, 09:00–17:00, 60-minute blocks
-- [ ] `GET /venues/{id}/slots?date=2024-02-19` returns slots for that UTC date only
-- [ ] `?status=AVAILABLE` filter works (applied in app layer)
-- [ ] Response includes `endTime` (derived, not from DB)
-- [ ] Non-ADMIN gets 403 on admin endpoints
-- [ ] 404 `VENUE_NOT_FOUND` when venueId does not exist or is INACTIVE
-- [ ] All unit and integration tests pass
+- [x] ADMIN can create a venue (`POST /api/v1/admin/venues`)
+- [x] USER can browse ACTIVE venues (`GET /api/v1/venues`) — fully public, no token required
+- [x] ADMIN can generate slots for a venue for a date range
+- [x] Generated slots are Mon–Fri only, 09:00–17:00, 60-minute blocks
+- [x] `GET /venues/{id}/slots?date=2024-02-19` returns slots for that UTC date only
+- [x] `?status=AVAILABLE` filter works (applied in app layer)
+- [x] Response includes `endTime` (derived, not from DB)
+- [x] Non-ADMIN gets 403 on admin endpoints
+- [x] 404 `VENUE_NOT_FOUND` when venueId does not exist or is INACTIVE
+- [x] All unit and integration tests pass (4 unit + 13 integration = 17 total)
 
 ---
 

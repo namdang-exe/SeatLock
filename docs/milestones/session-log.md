@@ -5,6 +5,58 @@
 
 ---
 
+## Session 2026-03-01 — Stage 4: venue-service Venue + Slot CRUD
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 4 — venue-service: Venue + Slot CRUD (first NOT STARTED stage)
+**Ended at:** Stage 4 COMPLETE. Stage 5 is next.
+
+### What Was Accomplished
+
+- Implemented venue-service's full CRUD layer (Postgres only, no Redis yet):
+  - Flyway migrations: `V1__create_venues.sql`, `V2__create_slots.sql` with FK and indexes
+  - `VenueStatus` / `SlotStatus` enums matching DB check constraints
+  - `Venue` and `Slot` JPA entities using `Persistable<UUID>` pattern
+  - `VenueRepository` (`findByStatus`), `SlotRepository` (date query, range query, ordered)
+  - DTOs: `CreateVenueRequest`, `UpdateVenueStatusRequest`, `GenerateSlotsRequest`, `VenueResponse`, `SlotResponse`
+  - `JwtConfig` → `JwtUtils` bean (separate from SecurityConfig to avoid circular dep)
+  - `JwtAuthenticationFilter` using `JwtUtils` from common module
+  - `SecurityConfig`: GETs fully public; `/api/v1/admin/**` requires ADMIN role; 401 entry point
+  - `SlotGenerationService`: Mon–Fri 09:00–17:00 UTC, 60-min blocks, duplicate-safe, bulk insert
+  - `VenueService`: CRUD + slot query with app-layer status filter + endTime derivation
+  - `VenueController` (`GET /api/v1/venues`, `GET /api/v1/venues/{id}/slots`)
+  - `AdminVenueController` (`POST /admin/venues`, `PATCH /{id}/status`, `POST /{id}/slots/generate`)
+  - `GlobalExceptionHandler` (404 VENUE_NOT_FOUND, 400 VALIDATION_ERROR)
+  - Fixed `AbstractIntegrationTest` — removed @Testcontainers/@Container, replaced with static initializer, removed Redis (Stage 4 is Postgres-only), made class `public`
+- Unit tests: `SlotGenerationServiceTest` (4 tests) — all pass
+- Integration tests: `VenueControllerIT` (11 tests) + `VenueServiceApplicationIT` (2 tests) — all pass
+
+### Decisions Made This Session
+
+| Decision | Chosen | Rejected | Reason |
+|----------|--------|----------|--------|
+| GET auth | Fully public (no Bearer token required) | Authenticated USER | "Browse before login" is natural product behaviour; keeps React simpler |
+| JwtUtils bean location | Separate `JwtConfig` class | In `SecurityConfig` | `SecurityConfig` → `JwtAuthenticationFilter` → `JwtUtils` (in SecurityConfig) → `SecurityConfig`: circular dependency. Separate config breaks the cycle |
+| Slot FK mapping | Raw `@Column(name = "venue_id") UUID` | `@ManyToOne Venue` | Service never navigates Slot → Venue at runtime; raw UUID avoids unnecessary lazy-load config |
+| Status filter | Applied in service layer (Java stream) | SQL WHERE clause | Lets the full slot list be cached as a single Redis key in Stage 5; SQL filter would require separate cache entries per status |
+
+### Gotchas / Surprises
+
+- **JwtUtils bean in SecurityConfig causes circular dependency.** SecurityConfig depends on JwtAuthenticationFilter (constructor); JwtAuthenticationFilter depends on JwtUtils (constructor); JwtUtils is a @Bean defined inside SecurityConfig → cycle. Fixed by extracting `JwtConfig` as a separate `@Configuration` class.
+- **Lenient Mockito stubs in `@BeforeEach` when a test overrides the same stub.** `skipsExistingSlots` re-stubs `findByVenueIdAndStartTimeBetween`, making the `@BeforeEach` stub unused for that test. Mockito strict mode throws `UnnecessaryStubbingException`. Fixed with `lenient().when(...)` on shared stubs.
+
+### Where to Continue
+
+**Next session starts at:** `docs/CODING_PLAN.md` → Stage 5 — venue-service: Availability Cache
+
+**Feed these four files to the new session:**
+1. `docs/CONTEXT.md`
+2. `docs/INDEX.md`
+3. `docs/CODING_PLAN.md`
+4. `docs/open-questions.md`
+
+---
+
 ## Session 2026-03-01 — Stage 3: user-service Auth
 
 **Phase:** 1 — Foundation

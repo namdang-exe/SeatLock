@@ -5,6 +5,10 @@ spring:
     hibernate:
       ddl-auto: validate
 
+seatlock:
+  jwt:
+    secret: "seatlock-test-jwt-secret-change-in-prod-32chars"
+
 logging:
   level:
     com.seatlock: DEBUG

@@ -4,6 +4,68 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-01] Lenient stubs required when @BeforeEach stub is overridden in a test method
+
+**Stage:** 4 (venue-service: Venue + Slot CRUD)
+
+**Symptom:**
+`UnnecessaryStubbingException` on `findByVenueIdAndStartTimeBetween` stub set in `@BeforeEach`. Test passes but Mockito's strict mode fails the suite after the test completes.
+
+**Root cause:**
+`skipsExistingSlots` test re-stubs the same method to return a non-empty list. Mockito strict mode sees the `@BeforeEach` stub as unused for that particular test (it was overridden, not invoked) and throws `UnnecessaryStubbingException`.
+
+**Fix:**
+Use `lenient().when(...)` for stubs in `@BeforeEach` that are intentionally overridden in specific test methods:
+
+```java
+lenient().when(slotRepository.findByVenueIdAndStartTimeBetween(eq(venueId), any(), any()))
+        .thenReturn(Collections.emptyList());
+lenient().when(slotRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+```
+
+**Files changed:**
+- `venue-service/src/test/java/com/seatlock/venue/service/SlotGenerationServiceTest.java`
+
+---
+
+## [2026-03-01] JwtUtils @Bean in SecurityConfig causes circular dependency
+
+**Stage:** 4 (venue-service: Venue + Slot CRUD)
+
+**Symptom:**
+```
+BeanCurrentlyInCreationException: Error creating bean with name 'jwtAuthenticationFilter':
+Requested bean is currently in creation: Is there an unresolvable circular reference?
+```
+Application context fails to load; all integration tests fail with `IllegalStateException`.
+
+**Root cause:**
+`SecurityConfig` depends on `JwtAuthenticationFilter` (constructor injection). `JwtAuthenticationFilter` depends on `JwtUtils` (constructor injection). `JwtUtils` was defined as a `@Bean` method inside `SecurityConfig`. Spring cannot construct `SecurityConfig` because it needs `JwtAuthenticationFilter`, which needs `JwtUtils`, which requires `SecurityConfig` to be constructed first.
+
+**Fix:**
+Extract the `JwtUtils` bean into a separate `@Configuration` class (`JwtConfig`). Now:
+- `JwtConfig` → `JwtUtils` (no dependencies on the security classes)
+- `JwtAuthenticationFilter` → `JwtUtils` (from `JwtConfig` — no cycle)
+- `SecurityConfig` → `JwtAuthenticationFilter` (no cycle)
+
+```java
+@Configuration
+public class JwtConfig {
+    @Bean
+    public JwtUtils jwtUtils(@Value("${seatlock.jwt.secret}") String secret) {
+        return new JwtUtils(secret);
+    }
+}
+```
+
+**Files changed:**
+- `venue-service/src/main/java/com/seatlock/venue/security/JwtConfig.java` (new)
+- `venue-service/src/main/java/com/seatlock/venue/security/SecurityConfig.java` (removed `@Bean JwtUtils`)
+
+**Apply this pattern to all future services** that use `JwtUtils` from `common` alongside a `JwtAuthenticationFilter`.
+
+---
+
 ## [2026-03-01] @Testcontainers annotation stops containers between test classes
 
 **Stage:** 3 (user-service: Auth)

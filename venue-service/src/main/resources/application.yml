@@ -12,12 +12,25 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
   flyway:
     enabled: true
     locations: classpath:db/migration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
 
 management:
   endpoints:
     web:
       exposure:
         include: health
+
+seatlock:
+  jwt:
+    secret: "changeme-use-vault-in-production-minimum-32ch"
+  slot:
+    duration-minutes: 60
