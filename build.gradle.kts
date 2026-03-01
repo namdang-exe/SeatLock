@@ -10,3 +10,14 @@ allprojects {
         mavenCentral()
     }
 }
+
+subprojects {
+    apply(plugin = "jacoco")
+
+    tasks.withType<JacocoReport>().configureEach {
+        reports {
+            xml.required = true
+            html.required = true
+        }
+    }
+}
