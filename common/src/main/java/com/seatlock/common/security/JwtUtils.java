@@ -28,8 +28,8 @@ public class JwtUtils {
 
     // --- User JWT helpers ---
 
-    public Long getUserId(String token) {
-        return parseAndValidate(token).get("userId", Long.class);
+    public String getUserId(String token) {
+        return parseAndValidate(token).get("userId", String.class);
     }
 
     public String getUserEmail(String token) {

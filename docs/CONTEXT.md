@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–2 complete, Stage 3 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–3 complete, Stage 4 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -125,6 +125,10 @@
 ### Implementation Decisions (Phase 1 — Stages 1–2)
 
 - We chose **`jvmArgs("-Dapi.version=1.44")`** over setting `DOCKER_API_VERSION` as an env var because Testcontainers 1.21.0 ships a shaded copy of docker-java whose `DefaultDockerClientConfig` reads the API version from the JVM system property `api.version`, not from the `DOCKER_API_VERSION` environment variable. Docker Desktop 4.60.1 enforces minimum API version 1.44; without this flag every Testcontainers request goes to `/v1.32/...` and gets HTTP 400. Added to every `integrationTest` task in all 4 service `build.gradle.kts` files.
+- We chose **`Persistable<UUID>`** over `@GeneratedValue(strategy = UUID)` with a pre-initialized field because initializing `userId = UUID.randomUUID()` in the field declaration makes Hibernate treat the entity as existing (non-null ID → UPDATE instead of INSERT). Implementing `Persistable<UUID>` with `isNew = true` on construction and `@PostPersist/@PostLoad` to flip it correctly signals new vs. existing to Spring Data. This also lets unit tests use a real UUID without JPA.
+- We chose **static initializer** over `@Testcontainers/@Container` for managing the PostgreSQL container in `AbstractIntegrationTest` because `@Testcontainers` stops the container at the end of each test CLASS. When multiple IT classes extend the base, the second class restarts the container on a new port while Spring's cached context still holds the old URL → `Connection refused`. A static initializer starts the container once for the JVM lifetime, all test classes share it, and Spring context caching works correctly.
+- We chose **explicit `authenticationEntryPoint` returning 401** in `SecurityConfig` because Spring Security 6.x defaults to `Http403ForbiddenEntryPoint` (403) when neither formLogin nor httpBasic is configured. Without an explicit entry point, unauthenticated requests to protected endpoints return 403 instead of 401.
+- We chose **permit `/error`** in `SecurityConfig` because Tomcat forwards unhandled exceptions to `/error`. Without permitting this path, the error response itself gets intercepted by Security → returns 401 instead of the actual error status (500, 409, etc.).
 - We chose **`tcp://localhost:2375`** as the Docker transport for integration tests (via `DOCKER_HOST` Windows env var + `~/.gradle/gradle.properties dockerHost`) because TCP is enabled in Docker Desktop and confirmed working via curl. Named pipe (`docker_engine`) also connects but has the same API version constraint.
 - We added `docs/BUGS.md` as a permanent bug/fix log. Critical bugs resolved during implementation are documented there with symptom, root cause, fix, and files changed.
 

@@ -5,6 +5,59 @@
 
 ---
 
+## Session 2026-03-01 — Stage 3: user-service Auth
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 3 — user-service: Auth (first NOT STARTED stage)
+**Ended at:** Stage 3 COMPLETE. Stage 4 is next.
+
+### What Was Accomplished
+
+- Implemented full authentication layer for user-service:
+  - Flyway migration `V1__create_users.sql` — `users` table with UUID PK, email unique index
+  - `User` JPA entity using `Persistable<UUID>` for client-side UUID generation
+  - `UserRepository` (Spring Data JPA) — `existsByEmail`, `findByEmail`
+  - DTOs: `RegisterRequest`, `RegisterResponse`, `LoginRequest`, `LoginResponse` (Java records)
+  - `JwtService` — HMAC-SHA256, 24h TTL, issues userId + role claims
+  - `JwtAuthenticationFilter` — extracts Bearer token, populates `SecurityContextHolder`
+  - `SecurityConfig` — stateless, explicit 401 entry point, `/error` in permitAll
+  - `UserRegistrationService` — email dedup, BCrypt hash, save
+  - `AuthenticationService` — lookup, password verify, token issue
+  - `AuthController` — `POST /api/v1/auth/register` (201), `POST /api/v1/auth/login` (200)
+  - `GlobalExceptionHandler` — 409 for EMAIL_ALREADY_EXISTS, 401 for INVALID_CREDENTIALS, 400 for validation
+- Unit tests: `UserRegistrationServiceTest`, `JwtServiceTest` — all pass
+- Integration tests: `AuthControllerIT` (6 tests: register, duplicate email, login, wrong password, JWT auth, token claims) — all pass
+- Fixed `JwtUtils.getUserId()` in common module to return `String` (UUID, not Long)
+- Added JaCoCo to root Gradle build; updated GitHub Actions CI to upload test reports and coverage artifacts
+
+### Decisions Made This Session
+
+| Decision | Chosen | Rejected | Reason |
+|----------|--------|----------|--------|
+| UUID generation | Client-side (`UUID.randomUUID()` in field) + `Persistable<UUID>` | Database `gen_random_uuid()` | Unit tests need a non-null ID before persistence; DB default requires a round-trip |
+| JWT token storage | 24h TTL, HMAC-SHA256 | Short-lived + refresh token | Sufficient for current scope; refresh token adds complexity deferred to Phase 2 |
+| Password hashing | BCrypt (Spring default) | Argon2, scrypt | BCrypt is the Spring Security default; upgrade path clear if needed |
+
+### Gotchas / Surprises
+
+- **`Persistable<UUID>` is required when the ID is pre-initialized.** Without it, Hibernate sees a non-null `@Id` and issues `UPDATE` instead of `INSERT` → `ObjectOptimisticLockingFailureException`.
+- **Spring Security 6.x defaults to `Http403ForbiddenEntryPoint`** for unauthenticated requests — explicit `authenticationEntryPoint` is required to get 401.
+- **Tomcat forwards unhandled exceptions to `/error`** — if `/error` is not in `permitAll`, Spring Security intercepts it and returns 401, completely hiding the real error. Must add `/error` to the permit list.
+- **`@Testcontainers` annotation stops containers between test classes.** When a second IT class runs, the container is gone but Spring's cached `ApplicationContext` still points to the old URL → `Connection refused`. Fixed with a static initializer block (container lives for the JVM lifetime).
+- **`AbstractIntegrationTest` must be `public`** — subclasses in a different package (e.g., `controller` subpackage) cannot extend a package-private base class.
+
+### Where to Continue
+
+**Next session starts at:** `docs/CODING_PLAN.md` → Stage 4 — venue-service: Venue + Slot CRUD
+
+**Feed these four files to the new session:**
+1. `docs/CONTEXT.md`
+2. `docs/INDEX.md`
+3. `docs/CODING_PLAN.md`
+4. `docs/open-questions.md`
+
+---
+
 ## Session 2026-02-28 — Stage 2: Testing Infrastructure
 
 **Phase:** 1 — Foundation

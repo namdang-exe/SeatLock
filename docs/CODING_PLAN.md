@@ -16,7 +16,7 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 |---|-------|--------|
 | 1 | Project Scaffolding + Docker Compose | COMPLETE |
 | 2 | Testing Infrastructure | COMPLETE |
-| 3 | user-service: Auth | NOT STARTED |
+| 3 | user-service: Auth | COMPLETE |
 | 4 | venue-service: Venue + Slot CRUD | NOT STARTED |
 | 5 | venue-service: Availability Cache | NOT STARTED |
 | 6 | booking-service: Foundation + Service JWT | NOT STARTED |
@@ -233,7 +233,9 @@ logging:
 
 ## Stage 3 — user-service: Auth
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
+
+**Completed:** 2026-03-01. All acceptance criteria met. ADMIN role is in the schema and JWT; ADMIN users are created directly via UserRepository in tests (no API backdoor needed).
 
 **Goal:** Registration, login, and JWT issuance. JWT validation used by all services.
 
@@ -285,14 +287,14 @@ CREATE INDEX idx_users_email ON users (email);
 - Integration: register happy path, duplicate email, login happy path, bad password, JWT missing on protected endpoint
 
 ### Acceptance Criteria
-- [ ] `POST /api/v1/auth/register` creates user, returns 201 with `{userId, email}`
-- [ ] `POST /api/v1/auth/register` with duplicate email returns 409 `EMAIL_ALREADY_EXISTS`
-- [ ] `POST /api/v1/auth/login` returns 200 with signed JWT
-- [ ] JWT contains `userId`, `email`, `role` claims
-- [ ] `POST /api/v1/auth/login` with wrong password returns 401 `INVALID_CREDENTIALS`
-- [ ] Any request without a valid JWT to a protected endpoint returns 401
-- [ ] ADMIN user can be registered (set role = ADMIN via a test-only backdoor or seed script)
-- [ ] All unit and integration tests pass
+- [x] `POST /api/v1/auth/register` creates user, returns 201 with `{userId, email}`
+- [x] `POST /api/v1/auth/register` with duplicate email returns 409 `EMAIL_ALREADY_EXISTS`
+- [x] `POST /api/v1/auth/login` returns 200 with signed JWT
+- [x] JWT contains `userId`, `email`, `role` claims
+- [x] `POST /api/v1/auth/login` with wrong password returns 401 `INVALID_CREDENTIALS`
+- [x] Any request without a valid JWT to a protected endpoint returns 401
+- [x] ADMIN user can be registered (role field in schema; set directly via UserRepository in tests)
+- [x] All unit and integration tests pass
 
 ---
 

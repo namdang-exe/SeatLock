@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–2 complete, Stage 3 next |
-| Current implementation stage | Stage 3 — user-service: Auth |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–3 complete, Stage 4 next |
+| Current implementation stage | Stage 4 — venue-service: Venue + Slot CRUD |
 
 ---
 
@@ -92,6 +92,41 @@
 
 ---
 
+## Implemented API Endpoints (live)
+
+| Method | Path | Service | Status | Stage |
+|--------|------|---------|--------|-------|
+| POST | `/api/v1/auth/register` | user-service | 201 Created / 409 EMAIL_ALREADY_EXISTS | 3 |
+| POST | `/api/v1/auth/login` | user-service | 200 OK / 401 INVALID_CREDENTIALS | 3 |
+
+---
+
+## Implementation Files
+
+### Stage 3 — user-service: Auth
+
+| File | Purpose |
+|------|---------|
+| `user-service/src/main/resources/db/migration/V1__create_users.sql` | Flyway DDL: `users` table |
+| `user-service/src/main/java/com/seatlock/user/domain/User.java` | JPA entity; `Persistable<UUID>` for client-side UUID |
+| `user-service/src/main/java/com/seatlock/user/repository/UserRepository.java` | Spring Data JPA repo |
+| `user-service/src/main/java/com/seatlock/user/dto/RegisterRequest.java` | Validated registration request record |
+| `user-service/src/main/java/com/seatlock/user/dto/RegisterResponse.java` | Registration response record |
+| `user-service/src/main/java/com/seatlock/user/dto/LoginRequest.java` | Login request record |
+| `user-service/src/main/java/com/seatlock/user/dto/LoginResponse.java` | Login response record (token + expiresAt) |
+| `user-service/src/main/java/com/seatlock/user/security/JwtService.java` | JWT issuance and parsing (HMAC-SHA256, 24h TTL) |
+| `user-service/src/main/java/com/seatlock/user/security/JwtAuthenticationFilter.java` | Bearer token extraction → SecurityContextHolder |
+| `user-service/src/main/java/com/seatlock/user/security/SecurityConfig.java` | Stateless security chain; explicit 401 entry point |
+| `user-service/src/main/java/com/seatlock/user/service/UserRegistrationService.java` | Register: email dedup, password hash, save |
+| `user-service/src/main/java/com/seatlock/user/service/AuthenticationService.java` | Login: lookup, password verify, issue token |
+| `user-service/src/main/java/com/seatlock/user/controller/AuthController.java` | `POST /api/v1/auth/register` + `POST /api/v1/auth/login` |
+| `user-service/src/main/java/com/seatlock/user/exception/GlobalExceptionHandler.java` | Maps domain exceptions → HTTP responses |
+| `user-service/src/test/java/com/seatlock/user/service/UserRegistrationServiceTest.java` | Unit tests: happy path, duplicate email |
+| `user-service/src/test/java/com/seatlock/user/security/JwtServiceTest.java` | Unit tests: token issuance, claims parsing |
+| `user-service/src/integrationTest/java/com/seatlock/user/controller/AuthControllerIT.java` | 6 ITs: register, duplicate, login, bad pass, JWT auth, claims |
+
+---
+
 ## Implementation Plan
 
 Full detail in `docs/CODING_PLAN.md`. Summary below.
@@ -100,7 +135,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 |-------|------|-----------|--------|
 | 1 | Project Scaffolding | Multi-module Gradle, Docker Compose, GitHub Actions CI | COMPLETE |
 | 2 | Testing Infrastructure | JUnit 5, Testcontainers, integration test base classes | COMPLETE |
-| 3 | user-service: Auth | Register, login, JWT issuance, Spring Security filter | NOT STARTED |
+| 3 | user-service: Auth | Register, login, JWT issuance, Spring Security filter | COMPLETE |
 | 4 | venue-service: Venue + Slot CRUD | Venue/slot CRUD, slot auto-generation, admin endpoints | NOT STARTED |
 | 5 | venue-service: Availability Cache | Redis cache for slots, cache miss → Postgres fallback | NOT STARTED |
 | 6 | booking-service: Foundation + Service JWT | booking-service setup, Flyway migrations, Service JWT handshake | NOT STARTED |
