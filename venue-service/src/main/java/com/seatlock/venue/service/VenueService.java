@@ -1,5 +1,6 @@
 package com.seatlock.venue.service;
 
+import com.seatlock.venue.cache.SlotCacheService;
 import com.seatlock.venue.domain.Slot;
 import com.seatlock.venue.domain.Venue;
 import com.seatlock.venue.domain.VenueStatus;
@@ -20,6 +21,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -29,16 +31,19 @@ public class VenueService {
     private final VenueRepository venueRepository;
     private final SlotRepository slotRepository;
     private final SlotGenerationService slotGenerationService;
+    private final SlotCacheService slotCacheService;
 
     @Value("${seatlock.slot.duration-minutes:60}")
     private int slotDurationMinutes;
 
     public VenueService(VenueRepository venueRepository,
                         SlotRepository slotRepository,
-                        SlotGenerationService slotGenerationService) {
+                        SlotGenerationService slotGenerationService,
+                        SlotCacheService slotCacheService) {
         this.venueRepository = venueRepository;
         this.slotRepository = slotRepository;
         this.slotGenerationService = slotGenerationService;
+        this.slotCacheService = slotCacheService;
     }
 
     public List<VenueResponse> getActiveVenues() {
@@ -73,19 +78,23 @@ public class VenueService {
             throw new VenueNotFoundException(venueId);
         }
 
-        List<Slot> slots;
         if (date != null) {
+            String cacheKey = slotCacheService.buildKey(venueId, date);
+            Optional<List<SlotResponse>> cached = slotCacheService.get(cacheKey);
+            if (cached.isPresent()) {
+                return applyStatusFilter(cached.get(), statusFilter);
+            }
+
             Instant dayStart = date.atStartOfDay(ZoneOffset.UTC).toInstant();
             Instant dayEnd = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-            slots = slotRepository.findByVenueIdAndDay(venueId, dayStart, dayEnd);
-        } else {
-            slots = slotRepository.findByVenueIdOrderByStartTimeAsc(venueId);
+            List<Slot> slots = slotRepository.findByVenueIdAndDay(venueId, dayStart, dayEnd);
+            List<SlotResponse> responses = slots.stream().map(this::toSlotResponse).toList();
+            slotCacheService.put(cacheKey, responses);
+            return applyStatusFilter(responses, statusFilter);
         }
 
-        return slots.stream()
-                .filter(s -> statusFilter == null || s.getStatus().name().equals(statusFilter))
-                .map(this::toSlotResponse)
-                .toList();
+        List<Slot> slots = slotRepository.findByVenueIdOrderByStartTimeAsc(venueId);
+        return applyStatusFilter(slots.stream().map(this::toSlotResponse).toList(), statusFilter);
     }
 
     @Transactional
@@ -95,6 +104,15 @@ public class VenueService {
         return slotGenerationService.generate(venueId, req.fromDate(), req.toDate())
                 .stream()
                 .map(this::toSlotResponse)
+                .toList();
+    }
+
+    private List<SlotResponse> applyStatusFilter(List<SlotResponse> slots, String statusFilter) {
+        if (statusFilter == null) {
+            return slots;
+        }
+        return slots.stream()
+                .filter(s -> s.status().equals(statusFilter))
                 .toList();
     }
 

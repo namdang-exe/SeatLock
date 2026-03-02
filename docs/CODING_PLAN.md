@@ -18,7 +18,7 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 2 | Testing Infrastructure | COMPLETE |
 | 3 | user-service: Auth | COMPLETE |
 | 4 | venue-service: Venue + Slot CRUD | COMPLETE |
-| 5 | venue-service: Availability Cache | NOT STARTED |
+| 5 | venue-service: Availability Cache | COMPLETE |
 | 6 | booking-service: Foundation + Service JWT | NOT STARTED |
 | 7 | booking-service: Hold Creation | NOT STARTED |
 | 8 | booking-service: Booking Confirmation | NOT STARTED |
@@ -392,7 +392,7 @@ Apply `?status=` filter in the application layer (not SQL). Return `endTime` der
 
 ## Stage 5 — venue-service: Availability Cache
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** Add Redis caching to `GET /venues/{venueId}/slots`. Cache miss reads Postgres and caches the result. This is the hot read path (polled every 5 seconds by the frontend).
 

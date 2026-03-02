@@ -8,6 +8,8 @@ spring:
 seatlock:
   jwt:
     secret: "seatlock-test-jwt-secret-change-in-prod-32chars"
+  cache:
+    slots-ttl-seconds: 1
 
 logging:
   level:

@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: venue-service
+  data:
+    redis:
+      host: localhost
+      port: 6379
   datasource:
     url: jdbc:postgresql://localhost:5432/venue_db
     username: seatlock
@@ -34,3 +38,5 @@ seatlock:
     secret: "changeme-use-vault-in-production-minimum-32ch"
   slot:
     duration-minutes: 60
+  cache:
+    slots-ttl-seconds: 5

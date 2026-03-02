@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–4 complete, Stage 5 next |
-| Current implementation stage | Stage 5 — venue-service: Availability Cache |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–5 complete, Stage 6 next |
+| Current implementation stage | Stage 6 — booking-service: Foundation + Service JWT |
 
 ---
 
@@ -171,7 +171,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 2 | Testing Infrastructure | JUnit 5, Testcontainers, integration test base classes | COMPLETE |
 | 3 | user-service: Auth | Register, login, JWT issuance, Spring Security filter | COMPLETE |
 | 4 | venue-service: Venue + Slot CRUD | Venue/slot CRUD, slot auto-generation, admin endpoints | COMPLETE |
-| 5 | venue-service: Availability Cache | Redis cache for slots, cache miss → Postgres fallback | NOT STARTED |
+| 5 | venue-service: Availability Cache | Redis cache for slots, cache miss → Postgres fallback | COMPLETE |
 | 6 | booking-service: Foundation + Service JWT | booking-service setup, Flyway migrations, Service JWT handshake | NOT STARTED |
 | 7 | booking-service: Hold Creation | POST /holds — SETNX gate, all-or-nothing, Postgres writes | NOT STARTED |
 | 8 | booking-service: Booking Confirmation | POST /bookings — crash-safe order, idempotency, confirmationNumber | NOT STARTED |
