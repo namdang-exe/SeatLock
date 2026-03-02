@@ -122,7 +122,7 @@
 - We decided **fail fast on startup if Vault is unreachable** — container exits, ECS restarts with backoff; cached secrets on startup are rejected because they defeat secret rotation (OQ-22 D-6.D.1).
 - We decided **hold in-memory secrets at runtime if Vault becomes unreachable** — degrade the health endpoint, alert via metrics, do not crash a running service over a transient Vault blip (OQ-22 D-6.D.2).
 
-### Implementation Decisions (Phase 1 — Stages 1–4)
+### Implementation Decisions (Phase 1 — Stages 1–5)
 
 - We chose **`jvmArgs("-Dapi.version=1.44")`** over setting `DOCKER_API_VERSION` as an env var because Testcontainers 1.21.0 ships a shaded copy of docker-java whose `DefaultDockerClientConfig` reads the API version from the JVM system property `api.version`, not from the `DOCKER_API_VERSION` environment variable. Docker Desktop 4.60.1 enforces minimum API version 1.44; without this flag every Testcontainers request goes to `/v1.32/...` and gets HTTP 400. Added to every `integrationTest` task in all 4 service `build.gradle.kts` files.
 - We chose **`Persistable<UUID>`** over `@GeneratedValue(strategy = UUID)` with a pre-initialized field because initializing `userId = UUID.randomUUID()` in the field declaration makes Hibernate treat the entity as existing (non-null ID → UPDATE instead of INSERT). Implementing `Persistable<UUID>` with `isNew = true` on construction and `@PostPersist/@PostLoad` to flip it correctly signals new vs. existing to Spring Data. This also lets unit tests use a real UUID without JPA.
@@ -135,6 +135,15 @@
 - We chose **raw `@Column(name = "venue_id") UUID` on Slot** (no `@ManyToOne` relationship) because the service never navigates from Slot to Venue at runtime; the raw UUID avoids unnecessary lazy-load configuration.
 - We chose **GET endpoints fully public** (no Bearer token required) for venue-service browse endpoints (`GET /venues`, `GET /venues/{id}/slots`) because "browse before login" is natural product behaviour and avoids coupling the browsing experience to auth availability.
 - We confirmed **status filter applied in service/app layer** (not SQL) on the slot query so the full slot list can be stored as a single Redis cache key in Stage 5 and any status-filtered variant can be served from it without a separate cache entry.
+
+### Implementation Decisions (Phase 1 — Stage 5)
+
+- We chose **`SlotCacheService` as a separate `@Service` class** over inlining Redis logic in `VenueService` because it isolates cache key construction and JSON serialization into a unit-testable component; `VenueService` only needs to call `get`/`put` without knowing the Redis API.
+- We chose **`StringRedisTemplate` + manual `ObjectMapper` serialization** over Spring's `@Cacheable`/`CacheManager` abstraction because `@Cacheable` uses Spring's opaque `Cache` abstraction and makes it difficult to inspect or expire specific keys by pattern — both critical for booking-service to `DEL slots:{venueId}:{date}` keys it doesn't own.
+- We chose **cache only date-scoped queries** (not the undated "all slots" query) because the cache key is `slots:{venueId}:{date}` and an undated query has no sensible partition key; the hot path (frontend 5s poll) always provides a date.
+- We chose **`GenericContainer<>("redis:7")` in the `AbstractIntegrationTest` static initializer** over a separate Redis Testcontainers module because `GenericContainer` from the base testcontainers artifact (already on the classpath) is sufficient; the static initializer starts the container once for the JVM lifetime, matching the same pattern used for Postgres and avoiding context reload between IT classes.
+- We chose **not to use `@MockitoSpyBean` in the cache integration test** because ITs should verify observable outcomes (Redis key exists, response data is correct, TTL expires) rather than internal implementation details (call counts). Using `@SpyBean` to count repository calls is a unit-test concern, and it forces Spring to create a separate application context for the spy-annotated class, losing context-reuse benefits.
+- We chose **`Mockito.lenient().when(...)` for `@BeforeEach` stubs not used by every test** in `SlotCacheServiceTest` because Mockito's strict mode (`@ExtendWith(MockitoExtension.class)`) throws `UnnecessaryStubbingException` when a test doesn't exercise a setup stub. `lenient()` marks only that specific stub as intentionally optional, leaving strict checking in force everywhere else.
 
 ---
 

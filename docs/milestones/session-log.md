@@ -5,6 +5,52 @@
 
 ---
 
+## Session 2026-03-01 — Stage 5: venue-service Availability Cache
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 5 — venue-service: Availability Cache (first NOT STARTED stage)
+**Ended at:** Stage 5 COMPLETE. Stage 6 is next.
+
+### What Was Accomplished
+
+- Added Redis caching to `GET /venues/{venueId}/slots`:
+  - `spring-boot-starter-data-redis` dependency added to `venue-service/build.gradle.kts`
+  - Redis config added to `application.yml` (`host: localhost`, `port: 6379`, `slots-ttl-seconds: 5`)
+  - Test profile gets `slots-ttl-seconds: 1` to allow TTL expiry to be verified in tests without a long sleep
+  - `AbstractIntegrationTest` updated: `GenericContainer("redis:7")` added to static initializer alongside Postgres; `spring.data.redis.host/port` wired via `@DynamicPropertySource`
+  - `SlotCacheService` created: `buildKey(venueId, date)` → `"slots:{venueId}:{date}"`, `get(key)` → `Optional<List<SlotResponse>>`, `put(key, slots)` with configured TTL. Uses `StringRedisTemplate` + `ObjectMapper`. Serialization/deserialization errors are swallowed (logged as WARN) so cache failures never break the read path.
+  - `VenueService.getSlots()` updated: cache-first path for date-scoped queries (HIT → filter + return; MISS → Postgres → cache → filter → return). Undated queries bypass cache. `applyStatusFilter()` extracted as a private helper used by both code paths.
+- Unit tests: `SlotCacheServiceTest` (5 tests) — key format, cache miss, round-trip field preservation including `Instant` serialization, TTL setting, corrupt JSON graceful handling — all pass
+- Integration tests: `SlotCacheIT` (5 tests) — Redis key populated on first request, key present + data consistent on second request, TTL expiry confirmed at 1.5s sleep, status filter applied from cached data, endTime derived from cached data — all pass
+- Existing `VenueControllerIT` (11 tests) still pass — no regressions
+
+### Decisions Made This Session
+
+| Decision | Chosen | Rejected | Reason |
+|----------|--------|----------|--------|
+| Cache service structure | Separate `SlotCacheService` class | Inline Redis logic in `VenueService` | Isolates cache concerns; makes key construction and serialization independently unit-testable |
+| Redis template | `StringRedisTemplate` + manual `ObjectMapper` | Spring `@Cacheable` / `CacheManager` | `@Cacheable` hides the key, making it impossible for booking-service to issue targeted `DEL` on keys it doesn't own |
+| Cache scope | Date-scoped queries only | All slot queries | Undated query has no partition key; the hot path (5s frontend poll) always provides a date |
+| IT verification of cache hit | Redis key presence + response equality | `@MockitoSpyBean` call count | ITs should test observable outcomes, not internal call paths. Spy also forces a new Spring context (cost); key-based assertion is stronger and simpler |
+
+### Gotchas / Surprises
+
+- **`UnnecessaryStubbingException` when `@BeforeEach` Redis stub is unused by a test that never touches Redis.** `buildKey_formatsCorrectly()` only calls the pure string method — no Redis calls at all — so the `when(redis.opsForValue())` setup stub is flagged as unnecessary. Fixed with `Mockito.lenient().when(...)` for that specific setup line. See BUGS.md.
+- **`@MockitoSpyBean` deprecation warning in Spring Boot 3.5.** `org.springframework.boot.test.mock.mockito.SpyBean` is deprecated; the replacement is `org.springframework.test.context.bean.override.mockito.MockitoSpyBean`. Updated import before removing the spy entirely.
+- **`@MockitoSpyBean` forces a new Spring context.** Any IT class that declares a `@MockitoSpyBean` gets its own application context — Spring cannot reuse the shared context because the bean graph is different. Removing the spy from `SlotCacheIT` restored context sharing with `VenueControllerIT`.
+
+### Where to Continue
+
+**Next session starts at:** `docs/CODING_PLAN.md` → Stage 6 — booking-service: Foundation + Service JWT
+
+**Feed these four files to the new session:**
+1. `docs/CONTEXT.md`
+2. `docs/INDEX.md`
+3. `docs/CODING_PLAN.md`
+4. `docs/open-questions.md`
+
+---
+
 ## Session 2026-03-01 — Stage 4: venue-service Venue + Slot CRUD
 
 **Phase:** 1 — Foundation

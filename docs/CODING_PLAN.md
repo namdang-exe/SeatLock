@@ -435,13 +435,13 @@ seatlock:
 - Integration: first request → Postgres hit (verify via query count or spy); second request within 5s → cache hit (verify Redis key exists); key expires after 5s (use short TTL in test profile)
 
 ### Acceptance Criteria
-- [ ] First `GET /venues/{id}/slots` for a venue+date queries Postgres and stores result in Redis
-- [ ] Second request within 5 seconds is served entirely from Redis (no Postgres query)
-- [ ] Cache key format is `slots:{venueId}:{date}` (ISO 8601 date)
-- [ ] `?status=` filter correctly filters the cached full list in the application layer
-- [ ] `endTime` is derived correctly in both cache-hit and cache-miss paths
-- [ ] Redis key expires after 5 seconds (verified in integration test with short TTL profile)
-- [ ] All unit and integration tests pass
+- [x] First `GET /venues/{id}/slots` for a venue+date queries Postgres and stores result in Redis
+- [x] Second request within 5 seconds is served entirely from Redis (no Postgres query)
+- [x] Cache key format is `slots:{venueId}:{date}` (ISO 8601 date)
+- [x] `?status=` filter correctly filters the cached full list in the application layer
+- [x] `endTime` is derived correctly in both cache-hit and cache-miss paths
+- [x] Redis key expires after 5 seconds (verified in integration test with short TTL profile)
+- [x] All unit and integration tests pass
 
 ---
 

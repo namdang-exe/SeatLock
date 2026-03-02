@@ -159,6 +159,19 @@
 | `venue-service/src/test/java/com/seatlock/venue/service/SlotGenerationServiceTest.java` | 4 unit tests: weekdays only, correct times, skip duplicates, weekend empty |
 | `venue-service/src/integrationTest/java/com/seatlock/venue/controller/VenueControllerIT.java` | 11 ITs: CRUD, auth, generate, date filter, status filter, 404s, endTime |
 
+### Stage 5 — venue-service: Availability Cache
+
+| File | Purpose |
+|------|---------|
+| `venue-service/src/main/java/com/seatlock/venue/cache/SlotCacheService.java` | `buildKey`, `get`, `put` — `StringRedisTemplate` + `ObjectMapper`; swallows serialization errors |
+| `venue-service/src/main/java/com/seatlock/venue/service/VenueService.java` | Updated: cache-first path for date-scoped queries; `applyStatusFilter` extracted as helper |
+| `venue-service/src/main/resources/application.yml` | Added `spring.data.redis.host/port`, `seatlock.cache.slots-ttl-seconds: 5` |
+| `venue-service/src/test/resources/application-test.yml` | Added `seatlock.cache.slots-ttl-seconds: 1` for TTL expiry test |
+| `venue-service/src/integrationTest/java/com/seatlock/venue/AbstractIntegrationTest.java` | Added Redis `GenericContainer` in static initializer; wired `spring.data.redis.host/port` via `@DynamicPropertySource` |
+| `venue-service/src/test/java/com/seatlock/venue/cache/SlotCacheServiceTest.java` | 5 unit tests: key format, cache miss, round-trip field preservation, TTL setting, corrupt JSON |
+| `venue-service/src/integrationTest/java/com/seatlock/venue/cache/SlotCacheIT.java` | 5 ITs: key populated, key present on second request + data consistent, TTL expiry, status filter, endTime |
+| `venue-service/build.gradle.kts` | Added `spring-boot-starter-data-redis` dependency |
+
 ---
 
 ## Implementation Plan

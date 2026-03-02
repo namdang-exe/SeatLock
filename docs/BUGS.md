@@ -4,6 +4,33 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-01] UnnecessaryStubbingException when @BeforeEach stub is unused by a test that never touches the mocked class
+
+**Stage:** 5 (venue-service: Availability Cache)
+
+**Symptom:**
+`SlotCacheServiceTest.buildKey_formatsCorrectly()` failed with `UnnecessaryStubbingException`. The test passed its assertions but Mockito failed the suite after the test completed.
+
+**Root cause:**
+`@BeforeEach` set up `when(redis.opsForValue()).thenReturn(valueOps)` for all tests. `buildKey_formatsCorrectly()` only calls `slotCacheService.buildKey(...)`, which never touches the `StringRedisTemplate` at all. Mockito's strict mode detects the stub as unused for that test and throws.
+
+This is distinct from the Stage 4 case (where the same stub was *overridden* by a specific test). Here it is completely *unused* because the test exercises a code path that doesn't call Redis.
+
+**Fix:**
+Use `Mockito.lenient().when(...)` for the Redis ops setup in `@BeforeEach`. Strict checking remains in force for all other stubs.
+
+```java
+// @BeforeEach
+Mockito.lenient().when(redis.opsForValue()).thenReturn(valueOps);
+```
+
+**Files changed:**
+- `venue-service/src/test/java/com/seatlock/venue/cache/SlotCacheServiceTest.java`
+
+**Pattern:** Any `@BeforeEach` stub that not all tests in the class exercise should be wrapped in `Mockito.lenient().when(...)`. The `lenient()` call is surgical — it doesn't disable strict mode globally.
+
+---
+
 ## [2026-03-01] Lenient stubs required when @BeforeEach stub is overridden in a test method
 
 **Stage:** 4 (venue-service: Venue + Slot CRUD)
