@@ -36,8 +36,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Claims claims = jwtUtils.parseAndValidate(token);
                 String email = claims.getSubject();
                 String role = claims.get("role", String.class);
+                String userId = claims.get("userId", String.class);
                 var auth = new UsernamePasswordAuthenticationToken(
                         email, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                auth.setDetails(userId);
                 SecurityContextHolder.getContext().setAuthentication(auth);
             } catch (JwtException ignored) {
                 // invalid/expired token — let it fall through; protected endpoints will return 401

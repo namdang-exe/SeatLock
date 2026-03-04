@@ -5,6 +5,59 @@
 
 ---
 
+## Session 2026-03-03 — Stage 7: booking-service Hold Creation
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 7 — booking-service: Hold Creation (first NOT STARTED stage)
+**Ended at:** Stage 7 COMPLETE. Stage 8 is next.
+
+### What Was Accomplished
+
+**`POST /api/v1/holds` fully implemented** — all 8 steps of the spec operation sequence, all acceptance criteria met:
+
+- `HoldController` validates `Idempotency-Key` header (400 if missing/invalid UUID)
+- `HoldService.createHold()` implements steps 2–8 exactly per spec:
+  - Step 2: Postgres idempotency check (`findBySessionIdAndStatus`)
+  - Step 3: venue-service slot verification (`SlotVerificationClient`)
+  - Step 4: holdId + expiresAt generation
+  - Step 5: Redis SETNX all-or-nothing (rolls back successfully-SET keys on any failure)
+  - Step 6: Postgres transaction via `TransactionTemplate` — INSERT holds + UPDATE slots WHERE status='AVAILABLE'; row count assertion as secondary gate
+  - Step 7: Non-fatal `DEL slots:{venueId}:{date}` cache invalidation
+  - Step 8: 200 response
+- `RedisHoldRepository`: `setnx` (NX EX 1800), `del`, `deleteSlotCache`
+- `SlotVerificationClient`: wraps `venueServiceClient` RestClient; 404 → `SlotNotFoundException`
+- `GlobalExceptionHandler`: maps all domain exceptions to spec error codes
+- Test stubs `V0__create_stub_tables.sql` updated to add `status` column to stub `slots` table
+
+**Tests — all passing:**
+- 4 unit tests (`HoldServiceTest`): idempotency, SETNX rollback, PG row-count mismatch, happy path
+- 5 integration tests (`HoldControllerIT`): happy path + Redis TTL assertion, 400, 409 SETNX, 409 PG mismatch, idempotent replay, concurrency (10 threads → exactly 1 wins)
+
+### Decisions Made This Session
+
+- `TransactionTemplate` (not `@Transactional`) to scope Postgres phase independently of Redis SETNX
+- `auth.setDetails(userId)` in `JwtAuthenticationFilter` to carry userId without a second JWT parse
+- `JdbcTemplate.update(PreparedStatementCreator)` with `createArrayOf("uuid", ...)` for the slot UPDATE — gives exact row count for the row-count mismatch gate
+- `@MockitoBean` (Spring Boot 3.5.x) replaces deprecated `@MockBean` going forward
+
+### Bugs / Surprises
+
+1. Multi-catch compiler error: `RedisConnectionFailureException | DataAccessException` — subclass relation forbidden. Fixed by catching only `DataAccessException`. (BUGS.md)
+2. Mockito `InvalidUseOfMatchersException`: raw UUID + `any()` matcher — fixed with `eq(slotId)`. (BUGS.md)
+3. `@MockBean` deprecated in Spring Boot 3.5.0 — replaced with `@MockitoBean`. (BUGS.md)
+4. `containsExactly(String)` on `List<?>` fails to compile — fixed with `@SuppressWarnings("unchecked")` cast to `List<String>`.
+
+### Next Session
+
+**Start with Stage 8: booking-service Booking Confirmation.**
+- Read only the Stage 8 section of `CODING_PLAN.md` before starting
+- Critical: Postgres commits BEFORE Redis DEL (ADR-008) — enforce this order exactly
+- The `HoldRepository.findBySessionIdAndStatus()` query is already in place
+- `BookingRepository` (empty) is in place from Stage 6 — will need queries added
+- The `RedisHoldRepository.getRawHold()` method is available for the Redis key verification step
+
+---
+
 ## Session 2026-03-02 — Stage 6: booking-service Foundation + Service JWT
 
 **Phase:** 1 — Foundation

@@ -548,7 +548,7 @@ fun venueServiceClient(serviceJwtService: ServiceJwtService): RestClient =
 
 ## Stage 7 — booking-service: Hold Creation
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** Implement `POST /api/v1/holds` with the full Redis SETNX concurrency gate. This is the most critical endpoint — follow the operation sequence exactly.
 
@@ -629,15 +629,15 @@ Launch 10 threads simultaneously, all calling `POST /api/v1/holds` for the same 
 - Integration: happy path hold creation, slot already held (SETNX fails), slot HELD in Postgres but Redis key expired (row count mismatch), idempotent replay, concurrency test (10 concurrent → 1 wins)
 
 ### Acceptance Criteria
-- [ ] `POST /api/v1/holds` creates holds for available slots; returns 200 with `sessionId` + `expiresAt`
-- [ ] Redis key `hold:{slotId}` exists after creation with TTL ≈ 1800s
-- [ ] Postgres `holds` rows inserted; `slots.status` updated to `HELD`
-- [ ] Slots cache key `slots:{venueId}:{date}` is DEL'd after successful hold
-- [ ] Missing `Idempotency-Key` header → 400 `MISSING_IDEMPOTENCY_KEY`
-- [ ] Same `Idempotency-Key` twice → returns existing holds, no duplicate rows
-- [ ] One unavailable slot → no holds created for any slot → 409 `SLOT_NOT_AVAILABLE`
-- [ ] Concurrency test: 10 concurrent holds for same slot → exactly 1 wins
-- [ ] All unit and integration tests pass
+- [x] `POST /api/v1/holds` creates holds for available slots; returns 200 with `sessionId` + `expiresAt`
+- [x] Redis key `hold:{slotId}` exists after creation with TTL ≈ 1800s
+- [x] Postgres `holds` rows inserted; `slots.status` updated to `HELD`
+- [x] Slots cache key `slots:{venueId}:{date}` is DEL'd after successful hold
+- [x] Missing `Idempotency-Key` header → 400 `MISSING_IDEMPOTENCY_KEY`
+- [x] Same `Idempotency-Key` twice → returns existing holds, no duplicate rows
+- [x] One unavailable slot → no holds created for any slot → 409 `SLOT_NOT_AVAILABLE`
+- [x] Concurrency test: 10 concurrent holds for same slot → exactly 1 wins
+- [x] All unit and integration tests pass
 
 ---
 

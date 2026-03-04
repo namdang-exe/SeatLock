@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–6 complete, Stage 7 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–7 complete, Stage 8 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -136,6 +136,14 @@
 - We chose **GET endpoints fully public** (no Bearer token required) for venue-service browse endpoints (`GET /venues`, `GET /venues/{id}/slots`) because "browse before login" is natural product behaviour and avoids coupling the browsing experience to auth availability.
 - We confirmed **status filter applied in service/app layer** (not SQL) on the slot query so the full slot list can be stored as a single Redis cache key in Stage 5 and any status-filtered variant can be served from it without a separate cache entry.
 
+### Implementation Decisions (Phase 1 — Stage 7)
+
+- We chose **`TransactionTemplate` (constructed from injected `PlatformTransactionManager`)** over `@Transactional` on `HoldService.createHold()` so that Redis SETNX runs outside the Postgres transaction. `@Transactional` on the whole method would hold a DB connection open during Redis calls; `TransactionTemplate` scopes the transaction precisely to the INSERT holds + UPDATE slots step.
+- We chose **`JdbcTemplate.update(PreparedStatementCreator)` with `conn.createArrayOf("uuid", ...)`** for the slot status UPDATE so we get an exact row count to compare against `slotIds.size()`. Spring Data JPA's `@Modifying` returns void or int but requires a JPA entity for slots, which would be fake in booking-service (Phase 0 shared-DB compromise).
+- We chose **`auth.setDetails(userId)`** in `JwtAuthenticationFilter` (booking-service) to carry the userId UUID string alongside the email principal. The controller extracts it via `((UsernamePasswordAuthenticationToken) auth).getDetails()`. This avoids a second JWT parse in the service layer and keeps the JWT as the single authority source.
+- We chose **`@MockitoBean` (not `@MockBean`)** for `SlotVerificationClient` in `HoldControllerIT` because `@MockBean` is deprecated in Spring Boot 3.5.0 and `@MockitoBean` from `org.springframework.test.context.bean.override.mockito` is the replacement.
+- We chose to add **`status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'`** to the test stub `slots` table (`V0__create_stub_tables.sql`) so the `UPDATE slots SET status = 'HELD' ... AND status = 'AVAILABLE'` query can be tested end-to-end against the Testcontainers Postgres instance.
+
 ### Implementation Decisions (Phase 1 — Stage 6)
 
 - We chose **`ServiceJwtAuthenticationFilter` as a `@Component` that creates its own `JwtUtils` instance** (from the injected `seatlock.service-jwt.secret` value) rather than a separate `@Configuration` bean. This avoids bean ambiguity between the user `JwtUtils` bean (from `JwtConfig`) and a potential second service-JWT `JwtUtils` bean — both are `JwtUtils` type and Spring would fail to autowire by type.
@@ -235,6 +243,28 @@
 | `docs/diagrams/04-data-model-erd.md` | ERD — all 5 tables, PKs, FKs, indexes |
 | `docs/diagrams/05-infrastructure.md` | AWS infrastructure topology |
 | `docs/BUGS.md` | Critical bug/fix log — symptom, root cause, fix, files changed |
+
+**Implementation (Phase 1 — Stage 7 complete):**
+| File | Contents |
+|------|----------|
+| `booking-service/src/main/java/com/seatlock/booking/dto/HoldRequest.java` | Validated request: `slotIds` list |
+| `booking-service/src/main/java/com/seatlock/booking/dto/HoldResponse.java` | Response: `sessionId`, `expiresAt`, `holds[]` |
+| `booking-service/src/main/java/com/seatlock/booking/client/InternalSlotResponse.java` | `{slotId, venueId, startTime, status}` from venue-service |
+| `booking-service/src/main/java/com/seatlock/booking/client/SlotVerificationClient.java` | Calls `GET /api/v1/internal/slots?ids=...`; 404 → `SlotNotFoundException` |
+| `booking-service/src/main/java/com/seatlock/booking/redis/HoldPayload.java` | `{holdId, userId, sessionId, expiresAt}` Redis JSON record |
+| `booking-service/src/main/java/com/seatlock/booking/redis/RedisHoldRepository.java` | `setnx`, `del`, `deleteSlotCache`; wraps `StringRedisTemplate` |
+| `booking-service/src/main/java/com/seatlock/booking/exception/MissingIdempotencyKeyException.java` | → 400 MISSING_IDEMPOTENCY_KEY |
+| `booking-service/src/main/java/com/seatlock/booking/exception/SlotNotFoundException.java` | → 404 SLOT_NOT_FOUND |
+| `booking-service/src/main/java/com/seatlock/booking/exception/SlotNotAvailableException.java` | → 409 SLOT_NOT_AVAILABLE + unavailableSlotIds |
+| `booking-service/src/main/java/com/seatlock/booking/exception/RedisUnavailableException.java` | → 503 SERVICE_UNAVAILABLE |
+| `booking-service/src/main/java/com/seatlock/booking/exception/GlobalExceptionHandler.java` | `@RestControllerAdvice`; maps all domain exceptions |
+| `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java` | All 8 steps; `TransactionTemplate` for Postgres phase |
+| `booking-service/src/main/java/com/seatlock/booking/controller/HoldController.java` | `POST /api/v1/holds`; validates Idempotency-Key |
+| `booking-service/src/main/java/com/seatlock/booking/security/JwtAuthenticationFilter.java` | Updated: stores userId in `auth.setDetails()` |
+| `booking-service/src/main/java/com/seatlock/booking/repository/HoldRepository.java` | Added `findBySessionIdAndStatus` |
+| `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Added `status` column to stub `slots` table |
+| `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` | 4 unit tests: idempotency, SETNX rollback, PG mismatch, happy path |
+| `booking-service/src/integrationTest/java/com/seatlock/booking/controller/HoldControllerIT.java` | 5 ITs: happy path+TTL, 400, 409 SETNX, 409 PG mismatch, idempotency, concurrency (10 threads→1 wins) |
 
 **Implementation (Phase 1 — Stage 6 complete):**
 | File | Contents |

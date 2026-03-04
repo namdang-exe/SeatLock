@@ -1,0 +1,12 @@
+package com.seatlock.booking.dto;
+
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+
+import java.util.List;
+import java.util.UUID;
+
+public record HoldRequest(
+        @NotEmpty(message = "slotIds must not be empty")
+        List<@NotNull UUID> slotIds) {
+}

@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–6 complete, Stage 7 next |
-| Current implementation stage | Stage 7 — booking-service: Hold Creation |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–7 complete, Stage 8 next |
+| Current implementation stage | Stage 8 — booking-service: Booking Confirmation |
 
 ---
 
@@ -104,6 +104,7 @@
 | GET | `/api/v1/venues/{venueId}/slots` | venue-service | 200 OK / 404 VENUE_NOT_FOUND (public) | 4 |
 | POST | `/api/v1/admin/venues/{venueId}/slots/generate` | venue-service | 201 Created / 403 (non-ADMIN) | 4 |
 | GET | `/api/v1/internal/slots?ids=...` | venue-service | 200 OK / 401 (no/bad service JWT) / 404 SLOT_NOT_FOUND | 6 |
+| POST | `/api/v1/holds` | booking-service | 200 OK / 400 MISSING_IDEMPOTENCY_KEY / 404 SLOT_NOT_FOUND / 409 SLOT_NOT_AVAILABLE / 503 SERVICE_UNAVAILABLE | 7 |
 
 ---
 
@@ -205,6 +206,29 @@
 | `venue-service/src/test/resources/application-test.yml` | Added `seatlock.service-jwt.secret` for tests |
 | `venue-service/src/integrationTest/java/com/seatlock/venue/controller/InternalSlotControllerIT.java` | 5 ITs: valid JWT 200, no JWT 401, user JWT 401, expired JWT 401, unknown slot 404 |
 
+### Stage 7 — booking-service: Hold Creation
+
+| File | Purpose |
+|------|---------|
+| `booking-service/src/main/java/com/seatlock/booking/dto/HoldRequest.java` | Validated request: `slotIds` list (not empty, elements not null) |
+| `booking-service/src/main/java/com/seatlock/booking/dto/HoldResponse.java` | Response: `sessionId`, `expiresAt`, `holds[]` (nested `HoldItemResponse`) |
+| `booking-service/src/main/java/com/seatlock/booking/client/InternalSlotResponse.java` | `{slotId, venueId, startTime, status}` record from venue-service |
+| `booking-service/src/main/java/com/seatlock/booking/client/SlotVerificationClient.java` | `GET /api/v1/internal/slots?ids=...`; 404 → `SlotNotFoundException` |
+| `booking-service/src/main/java/com/seatlock/booking/redis/HoldPayload.java` | `{holdId, userId, sessionId, expiresAt}` record serialized to Redis |
+| `booking-service/src/main/java/com/seatlock/booking/redis/RedisHoldRepository.java` | `setnx` (NX EX 1800), `del`, `deleteSlotCache`; wraps `StringRedisTemplate` |
+| `booking-service/src/main/java/com/seatlock/booking/exception/MissingIdempotencyKeyException.java` | → 400 MISSING_IDEMPOTENCY_KEY |
+| `booking-service/src/main/java/com/seatlock/booking/exception/SlotNotFoundException.java` | → 404 SLOT_NOT_FOUND |
+| `booking-service/src/main/java/com/seatlock/booking/exception/SlotNotAvailableException.java` | → 409 SLOT_NOT_AVAILABLE + `unavailableSlotIds` list |
+| `booking-service/src/main/java/com/seatlock/booking/exception/RedisUnavailableException.java` | → 503 SERVICE_UNAVAILABLE |
+| `booking-service/src/main/java/com/seatlock/booking/exception/GlobalExceptionHandler.java` | `@RestControllerAdvice`; maps all domain exceptions to error codes |
+| `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java` | All 8 steps; `TransactionTemplate` scopes Postgres phase only |
+| `booking-service/src/main/java/com/seatlock/booking/controller/HoldController.java` | `POST /api/v1/holds`; validates Idempotency-Key header |
+| `booking-service/src/main/java/com/seatlock/booking/security/JwtAuthenticationFilter.java` | Updated: stores `userId` claim in `auth.setDetails()` |
+| `booking-service/src/main/java/com/seatlock/booking/repository/HoldRepository.java` | Added `findBySessionIdAndStatus(UUID, HoldStatus)` |
+| `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Updated: added `status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'` to stub `slots` table |
+| `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` | 4 unit tests: idempotency check, SETNX rollback, PG row-count mismatch, happy path |
+| `booking-service/src/integrationTest/java/com/seatlock/booking/controller/HoldControllerIT.java` | 5 ITs: happy path (Redis TTL + PG state), 400, 409 SETNX fail, 409 PG mismatch, idempotent replay, concurrency (10 threads → 1 wins) |
+
 ---
 
 ## Implementation Plan
@@ -219,7 +243,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 4 | venue-service: Venue + Slot CRUD | Venue/slot CRUD, slot auto-generation, admin endpoints | COMPLETE |
 | 5 | venue-service: Availability Cache | Redis cache for slots, cache miss → Postgres fallback | COMPLETE |
 | 6 | booking-service: Foundation + Service JWT | booking-service setup, Flyway migrations, Service JWT handshake | COMPLETE |
-| 7 | booking-service: Hold Creation | POST /holds — SETNX gate, all-or-nothing, Postgres writes | NOT STARTED |
+| 7 | booking-service: Hold Creation | POST /holds — SETNX gate, all-or-nothing, Postgres writes | COMPLETE |
 | 8 | booking-service: Booking Confirmation | POST /bookings — crash-safe order, idempotency, confirmationNumber | NOT STARTED |
 | 9 | booking-service: Hold Expiry Job | @Scheduled 60s, SKIP LOCKED, retry + batch halving | NOT STARTED |
 | 10 | booking-service: Cancellation + History | POST cancel, GET history, admin view, stale key cleanup | NOT STARTED |

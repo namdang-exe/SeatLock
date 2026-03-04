@@ -4,6 +4,88 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-03] @MockBean deprecated — compilation warning + wrong annotation
+
+**Stage:** 7 (booking-service: Hold Creation)
+
+**Symptom:**
+`HoldControllerIT` compiled with warning: "`MockBean` in `org.springframework.boot.test.mock.mockito` has been deprecated and marked for removal."
+
+**Root cause:**
+Spring Boot 3.5.0 deprecated `@MockBean` (and `@SpyBean`) in favour of the new `@MockitoBean` / `@MockitoSpyBean` from `org.springframework.test.context.bean.override.mockito`.
+
+**Fix:**
+Replace `import org.springframework.boot.test.mock.mockito.MockBean` with `import org.springframework.test.context.bean.override.mockito.MockitoBean`, and rename the annotation.
+
+```java
+// Before
+@MockBean SlotVerificationClient slotVerificationClient;
+
+// After
+@MockitoBean SlotVerificationClient slotVerificationClient;
+```
+
+**Files changed:**
+- `booking-service/src/integrationTest/java/com/seatlock/booking/controller/HoldControllerIT.java`
+
+**Pattern:** Use `@MockitoBean` / `@MockitoSpyBean` for all future Spring Boot 3.5.x integration tests.
+
+---
+
+## [2026-03-03] Mockito InvalidUseOfMatchersException — raw value mixed with argument matcher
+
+**Stage:** 7 (booking-service: Hold Creation)
+
+**Symptom:**
+`HoldServiceTest.setnxFailure_secondSlot_deletesFirstKeyAndThrows()` failed with:
+```
+InvalidUseOfMatchersException: Invalid use of argument matchers!
+2 matchers expected, 1 recorded
+```
+
+**Root cause:**
+`when(redisHoldRepository.setnx(slotId1, any(HoldPayload.class)))` mixes a raw `UUID` value (`slotId1`) with an `any()` matcher. Mockito requires that when matchers are used, **all** arguments must be matchers.
+
+**Fix:**
+Wrap the raw UUID in `eq()`:
+```java
+when(redisHoldRepository.setnx(eq(slotId1), any(HoldPayload.class))).thenReturn(true);
+when(redisHoldRepository.setnx(eq(slotId2), any(HoldPayload.class))).thenReturn(false);
+```
+
+**Files changed:**
+- `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java`
+
+**Pattern:** Whenever a mocked method takes multiple arguments and you use `any()` for one, wrap all literal arguments in `eq()`.
+
+---
+
+## [2026-03-03] Multi-catch with related exception types — compiler error
+
+**Stage:** 7 (booking-service: Hold Creation)
+
+**Symptom:**
+```
+error: Alternatives in a multi-catch statement cannot be related by subclassing
+} catch (RedisConnectionFailureException | DataAccessException e) {
+```
+
+**Root cause:**
+`RedisConnectionFailureException` extends `DataAccessException`. Java forbids listing a supertype and its subtype in the same multi-catch clause.
+
+**Fix:**
+Catch only the supertype `DataAccessException` — it already covers `RedisConnectionFailureException`:
+```java
+} catch (DataAccessException e) {
+    throw new RedisUnavailableException(e);
+}
+```
+
+**Files changed:**
+- `booking-service/src/main/java/com/seatlock/booking/redis/RedisHoldRepository.java`
+
+---
+
 ## [2026-03-01] UnnecessaryStubbingException when @BeforeEach stub is unused by a test that never touches the mocked class
 
 **Stage:** 5 (venue-service: Availability Cache)
