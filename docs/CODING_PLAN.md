@@ -19,7 +19,7 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 3 | user-service: Auth | COMPLETE |
 | 4 | venue-service: Venue + Slot CRUD | COMPLETE |
 | 5 | venue-service: Availability Cache | COMPLETE |
-| 6 | booking-service: Foundation + Service JWT | NOT STARTED |
+| 6 | booking-service: Foundation + Service JWT | COMPLETE |
 | 7 | booking-service: Hold Creation | NOT STARTED |
 | 8 | booking-service: Booking Confirmation | NOT STARTED |
 | 9 | booking-service: Hold Expiry Job | NOT STARTED |
@@ -447,7 +447,7 @@ seatlock:
 
 ## Stage 6 — booking-service: Foundation + Service JWT
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** Stand up booking-service with its Flyway schema, entity classes, and the Service JWT handshake between booking-service and venue-service. No business logic yet.
 

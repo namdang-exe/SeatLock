@@ -5,6 +5,61 @@
 
 ---
 
+## Session 2026-03-02 — Stage 6: booking-service Foundation + Service JWT
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 6 — booking-service: Foundation + Service JWT (first NOT STARTED stage)
+**Ended at:** Stage 6 COMPLETE. Stage 7 is next.
+
+### What Was Accomplished
+
+**booking-service — new foundation:**
+- `build.gradle.kts` updated: added `spring-boot-starter-security`, `spring-boot-starter-validation`, `spring-boot-starter-data-redis`, `jjwt-api:0.12.6`, `spring-security-test`
+- `AbstractIntegrationTest` rewritten to use static initializer pattern (was incorrectly using `@Testcontainers/@Container` which stops containers between test classes)
+- Flyway migrations: `V1__create_holds.sql` (holds table, cross-service FKs to users + slots), `V2__create_bookings.sql` (bookings table)
+- Test-only `V0__create_stub_tables.sql` in `src/test/resources/db/migration/` creates minimal `users` + `slots` stubs to satisfy FK constraints in the single Testcontainers Postgres container
+- JPA entities: `Hold` + `Booking` (both `Persistable<UUID>`), `HoldStatus` + `BookingStatus` enums, `HoldRepository` + `BookingRepository`
+- `ServiceJwtService`: generates short-lived JWTs (`sub: booking-service`, `iss: seatlock-internal`, 5-min TTL, HS256)
+- Security stack: `JwtConfig` (separate `@Configuration` for `JwtUtils` bean), `JwtAuthenticationFilter`, `SecurityConfig` (health/error public, all else requires auth)
+- `VenueServiceClientConfig`: `RestClient` bean using a `ClientHttpRequestInterceptor` to inject a fresh service JWT on every request (not static `defaultHeader`)
+- `application.yml` updated with: `seatlock.jwt.secret`, `seatlock.service-jwt.*`, `seatlock.venue-service.base-url`, Redis config, Jackson date config
+- Unit tests: `ServiceJwtServiceTest` (4 tests — subject, issuer, expiry window, signature) — all pass
+
+**venue-service — service JWT validation layer:**
+- `ServiceJwtAuthenticationFilter`: `@Component`; only activates on `/api/v1/internal/**` (via `shouldNotFilter`); validates service JWT against `seatlock.service-jwt.secret`; checks `sub == "booking-service"`; 401 on any failure
+- `JwtAuthenticationFilter` updated: `shouldNotFilter` now returns `true` for `/api/v1/internal/**` — the two filters are non-overlapping
+- `SecurityConfig` updated: added `/api/v1/internal/**` requires `ROLE_SERVICE` (before the public GET catch-all); `ServiceJwtAuthenticationFilter` added to chain
+- `InternalSlotController`: `GET /api/v1/internal/slots?ids=...` — returns `[{slotId, venueId, startTime, status}]`; 404 if any ID not found
+- `InternalSlotResponse` record DTO
+- `GlobalExceptionHandler` updated: added `SlotNotFoundException` handler → 404 SLOT_NOT_FOUND
+- `application.yml` + `application-test.yml` updated with `seatlock.service-jwt.secret`
+- Integration tests: `InternalSlotControllerIT` (5 tests — valid JWT 200, no JWT 401, user JWT 401, expired JWT 401, unknown slot 404) — all pass
+
+**Test results:** All 9 new tests pass; all pre-existing tests still pass (no regressions).
+
+### Decisions Made This Session
+
+| Decision | Chosen | Rejected | Reason |
+|----------|--------|----------|--------|
+| Service JWT filter implementation | `ServiceJwtAuthenticationFilter` creates its own `JwtUtils` instance from `@Value` secret | Separate `@Configuration` bean producing a second named `JwtUtils` | Avoids bean ambiguity — two `JwtUtils` beans of the same type would break `JwtAuthenticationFilter` autowiring |
+| Filter path separation | `shouldNotFilter` on both filters to create non-overlapping paths | Single filter checking path and delegating | Cleaner — each filter has exactly one responsibility; no conditional branching inside `doFilterInternal` |
+| RestClient token injection | `requestInterceptor` generating a fresh token per request | `defaultHeader` with static value | `defaultHeader` evaluates once at bean-creation; interceptor respects the 5-minute JWT TTL |
+| Cross-service FK test strategy | `V0__create_stub_tables.sql` in `src/test/resources/db/migration/` | Separate test Flyway location, in-memory H2, removing FKs in test profile | Stub tables picked up automatically (test resources on integrationTest classpath); zero config overhead; same DDL in test and prod |
+
+### Gotchas / Surprises
+
+- **First IT run showed a spurious Docker `IllegalStateException`** — this was a Gradle test-result cache artifact from a previous failing run. Forcing `--rerun-tasks` ran cleanly on first attempt. Not a real bug.
+- **Cross-service FKs require stub tables** — V1's `REFERENCES users(user_id)` and `REFERENCES slots(slot_id)` will fail Flyway in a fresh Testcontainers Postgres unless those tables exist first. The `V0__create_stub_tables.sql` in test resources is the solution; it is invisible to production (test resources are not packaged).
+
+### What the Next Session Should Do First
+
+1. Read CONTEXT.md + INDEX.md + CODING_PLAN.md + open-questions.md (standard session start)
+2. The first NOT STARTED stage is **Stage 7 — booking-service: Hold Creation** (`POST /api/v1/holds`)
+3. Stage 7 has a mandatory exact operation sequence in CODING_PLAN.md — read it carefully before writing any code
+4. The Service JWT handshake (Stage 6) is the prerequisite — it is complete and tested
+
+---
+
 ## Session 2026-03-01 — Stage 5: venue-service Availability Cache
 
 **Phase:** 1 — Foundation

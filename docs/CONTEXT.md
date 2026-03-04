@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–5 complete, Stage 6 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–6 complete, Stage 7 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -136,6 +136,14 @@
 - We chose **GET endpoints fully public** (no Bearer token required) for venue-service browse endpoints (`GET /venues`, `GET /venues/{id}/slots`) because "browse before login" is natural product behaviour and avoids coupling the browsing experience to auth availability.
 - We confirmed **status filter applied in service/app layer** (not SQL) on the slot query so the full slot list can be stored as a single Redis cache key in Stage 5 and any status-filtered variant can be served from it without a separate cache entry.
 
+### Implementation Decisions (Phase 1 — Stage 6)
+
+- We chose **`ServiceJwtAuthenticationFilter` as a `@Component` that creates its own `JwtUtils` instance** (from the injected `seatlock.service-jwt.secret` value) rather than a separate `@Configuration` bean. This avoids bean ambiguity between the user `JwtUtils` bean (from `JwtConfig`) and a potential second service-JWT `JwtUtils` bean — both are `JwtUtils` type and Spring would fail to autowire by type.
+- We chose **`shouldNotFilter` on `JwtAuthenticationFilter` (venue-service)** to skip `/api/v1/internal/**` paths, ensuring user-JWT parsing never runs on internal routes. `ServiceJwtAuthenticationFilter` mirrors this by only activating on `/api/v1/internal/**`. The two filters are completely non-overlapping.
+- We chose **a `ClientHttpRequestInterceptor` on `RestClient`** (not `defaultHeader`) to inject the service JWT on booking-service's venue calls. `defaultHeader` computes the value once at bean-creation time; the interceptor generates a fresh token for every request, respecting the 5-minute TTL.
+- We chose **`V0__create_stub_tables.sql` in `booking-service/src/test/resources/db/migration/`** as test-only stub migration. It creates minimal `users` and `slots` tables so the cross-service FK constraints in V1 and V2 can be satisfied in the single-container Testcontainers setup. Flyway picks it up because test resources are on the integrationTest classpath via `sourceSets.test.get().output`.
+- We chose **`SecurityConfig` in booking-service permits only `/actuator/health` and `/error`** publicly (all else requires a user JWT). This is the correct shape for Stages 7+; no `/api/v1/**` routes exist yet so no further rules are needed in Stage 6.
+
 ### Implementation Decisions (Phase 1 — Stage 5)
 
 - We chose **`SlotCacheService` as a separate `@Service` class** over inlining Redis logic in `VenueService` because it isolates cache key construction and JSON serialization into a unit-testable component; `VenueService` only needs to call `get`/`put` without knowing the Redis API.
@@ -227,6 +235,29 @@
 | `docs/diagrams/04-data-model-erd.md` | ERD — all 5 tables, PKs, FKs, indexes |
 | `docs/diagrams/05-infrastructure.md` | AWS infrastructure topology |
 | `docs/BUGS.md` | Critical bug/fix log — symptom, root cause, fix, files changed |
+
+**Implementation (Phase 1 — Stage 6 complete):**
+| File | Contents |
+|------|----------|
+| `booking-service/src/main/resources/db/migration/V1__create_holds.sql` | Flyway DDL: `holds` table (cross-service FKs to users + slots) |
+| `booking-service/src/main/resources/db/migration/V2__create_bookings.sql` | Flyway DDL: `bookings` table (FK to holds) |
+| `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Test-only stub tables satisfying FK constraints in Testcontainers |
+| `booking-service/src/main/java/com/seatlock/booking/domain/HoldStatus.java` | Enum: `ACTIVE`, `CONFIRMED`, `EXPIRED`, `RELEASED` |
+| `booking-service/src/main/java/com/seatlock/booking/domain/BookingStatus.java` | Enum: `CONFIRMED`, `CANCELLED` |
+| `booking-service/src/main/java/com/seatlock/booking/domain/Hold.java` | JPA entity; `Persistable<UUID>` |
+| `booking-service/src/main/java/com/seatlock/booking/domain/Booking.java` | JPA entity; `Persistable<UUID>` |
+| `booking-service/src/main/java/com/seatlock/booking/repository/HoldRepository.java` | Spring Data JPA repo |
+| `booking-service/src/main/java/com/seatlock/booking/repository/BookingRepository.java` | Spring Data JPA repo |
+| `booking-service/src/main/java/com/seatlock/booking/security/ServiceJwtService.java` | Signs short-lived service JWTs (`sub: booking-service`, 5 min TTL) |
+| `booking-service/src/main/java/com/seatlock/booking/security/JwtConfig.java` | `@Bean JwtUtils` for user JWT validation (separate config, avoids circular dep) |
+| `booking-service/src/main/java/com/seatlock/booking/security/JwtAuthenticationFilter.java` | User Bearer token → SecurityContextHolder |
+| `booking-service/src/main/java/com/seatlock/booking/security/SecurityConfig.java` | Stateless chain; health + error public; all else requires auth |
+| `booking-service/src/main/java/com/seatlock/booking/config/VenueServiceClientConfig.java` | `RestClient` bean with per-request service JWT interceptor |
+| `booking-service/src/test/java/com/seatlock/booking/security/ServiceJwtServiceTest.java` | 4 unit tests: subject, issuer, expiry, signature |
+| `venue-service/src/main/java/com/seatlock/venue/security/ServiceJwtAuthenticationFilter.java` | Validates service JWTs on `/api/v1/internal/**`; 401 on failure |
+| `venue-service/src/main/java/com/seatlock/venue/dto/InternalSlotResponse.java` | `{slotId, venueId, startTime, status}` response record |
+| `venue-service/src/main/java/com/seatlock/venue/controller/InternalSlotController.java` | `GET /api/v1/internal/slots?ids=...`; 404 if any ID missing |
+| `venue-service/src/integrationTest/java/com/seatlock/venue/controller/InternalSlotControllerIT.java` | 5 ITs: valid JWT, no JWT, user JWT, expired JWT, unknown slot 404 |
 
 **Implementation (Phase 1 — Stage 1 complete):**
 | File | Contents |

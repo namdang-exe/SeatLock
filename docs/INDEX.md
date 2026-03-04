@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–5 complete, Stage 6 next |
-| Current implementation stage | Stage 6 — booking-service: Foundation + Service JWT |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–6 complete, Stage 7 next |
+| Current implementation stage | Stage 7 — booking-service: Hold Creation |
 
 ---
 
@@ -103,6 +103,7 @@
 | PATCH | `/api/v1/admin/venues/{id}/status` | venue-service | 200 OK / 403 (non-ADMIN) | 4 |
 | GET | `/api/v1/venues/{venueId}/slots` | venue-service | 200 OK / 404 VENUE_NOT_FOUND (public) | 4 |
 | POST | `/api/v1/admin/venues/{venueId}/slots/generate` | venue-service | 201 Created / 403 (non-ADMIN) | 4 |
+| GET | `/api/v1/internal/slots?ids=...` | venue-service | 200 OK / 401 (no/bad service JWT) / 404 SLOT_NOT_FOUND | 6 |
 
 ---
 
@@ -172,6 +173,38 @@
 | `venue-service/src/integrationTest/java/com/seatlock/venue/cache/SlotCacheIT.java` | 5 ITs: key populated, key present on second request + data consistent, TTL expiry, status filter, endTime |
 | `venue-service/build.gradle.kts` | Added `spring-boot-starter-data-redis` dependency |
 
+### Stage 6 — booking-service: Foundation + Service JWT
+
+| File | Purpose |
+|------|---------|
+| `booking-service/src/main/resources/db/migration/V1__create_holds.sql` | Flyway DDL: `holds` table (cross-service FKs to users + slots) |
+| `booking-service/src/main/resources/db/migration/V2__create_bookings.sql` | Flyway DDL: `bookings` table (FK to holds) |
+| `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Test-only: minimal stub `users` + `slots` for FK satisfaction in Testcontainers |
+| `booking-service/src/main/java/com/seatlock/booking/domain/HoldStatus.java` | Enum: `ACTIVE`, `CONFIRMED`, `EXPIRED`, `RELEASED` |
+| `booking-service/src/main/java/com/seatlock/booking/domain/BookingStatus.java` | Enum: `CONFIRMED`, `CANCELLED` |
+| `booking-service/src/main/java/com/seatlock/booking/domain/Hold.java` | JPA entity; `Persistable<UUID>` |
+| `booking-service/src/main/java/com/seatlock/booking/domain/Booking.java` | JPA entity; `Persistable<UUID>` |
+| `booking-service/src/main/java/com/seatlock/booking/repository/HoldRepository.java` | Spring Data JPA repo |
+| `booking-service/src/main/java/com/seatlock/booking/repository/BookingRepository.java` | Spring Data JPA repo |
+| `booking-service/src/main/java/com/seatlock/booking/security/ServiceJwtService.java` | Signs short-lived JWTs (`sub: booking-service`, `iss: seatlock-internal`, 5-min TTL) |
+| `booking-service/src/main/java/com/seatlock/booking/security/JwtConfig.java` | `@Bean JwtUtils` for user JWT validation (separate config avoids circular dep) |
+| `booking-service/src/main/java/com/seatlock/booking/security/JwtAuthenticationFilter.java` | User Bearer token → SecurityContextHolder |
+| `booking-service/src/main/java/com/seatlock/booking/security/SecurityConfig.java` | Stateless chain; health + error public; all else requires auth |
+| `booking-service/src/main/java/com/seatlock/booking/config/VenueServiceClientConfig.java` | `RestClient` bean with per-request service JWT interceptor |
+| `booking-service/src/main/resources/application.yml` | Added service-jwt config, user JWT secret, Redis, Jackson, venue-service base-url |
+| `booking-service/src/test/resources/application-test.yml` | Test overrides for JWT secrets + service-jwt config |
+| `booking-service/build.gradle.kts` | Added spring-security, jjwt-api, validation, spring-data-redis deps |
+| `booking-service/src/test/java/com/seatlock/booking/security/ServiceJwtServiceTest.java` | 4 unit tests: subject, issuer, expiry, signature |
+| `venue-service/src/main/java/com/seatlock/venue/security/ServiceJwtAuthenticationFilter.java` | Validates service JWTs on `/api/v1/internal/**`; 401 on any failure |
+| `venue-service/src/main/java/com/seatlock/venue/security/JwtAuthenticationFilter.java` | Added `shouldNotFilter` to skip `/api/v1/internal/**` |
+| `venue-service/src/main/java/com/seatlock/venue/security/SecurityConfig.java` | Updated: `ROLE_SERVICE` required for `/internal/**`; added `ServiceJwtAuthenticationFilter` |
+| `venue-service/src/main/java/com/seatlock/venue/dto/InternalSlotResponse.java` | `{slotId, venueId, startTime, status}` response record |
+| `venue-service/src/main/java/com/seatlock/venue/controller/InternalSlotController.java` | `GET /api/v1/internal/slots?ids=...`; 404 if any ID missing |
+| `venue-service/src/main/java/com/seatlock/venue/exception/GlobalExceptionHandler.java` | Added `SlotNotFoundException` handler → 404 SLOT_NOT_FOUND |
+| `venue-service/src/main/resources/application.yml` | Added `seatlock.service-jwt.secret` |
+| `venue-service/src/test/resources/application-test.yml` | Added `seatlock.service-jwt.secret` for tests |
+| `venue-service/src/integrationTest/java/com/seatlock/venue/controller/InternalSlotControllerIT.java` | 5 ITs: valid JWT 200, no JWT 401, user JWT 401, expired JWT 401, unknown slot 404 |
+
 ---
 
 ## Implementation Plan
@@ -185,7 +218,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 3 | user-service: Auth | Register, login, JWT issuance, Spring Security filter | COMPLETE |
 | 4 | venue-service: Venue + Slot CRUD | Venue/slot CRUD, slot auto-generation, admin endpoints | COMPLETE |
 | 5 | venue-service: Availability Cache | Redis cache for slots, cache miss → Postgres fallback | COMPLETE |
-| 6 | booking-service: Foundation + Service JWT | booking-service setup, Flyway migrations, Service JWT handshake | NOT STARTED |
+| 6 | booking-service: Foundation + Service JWT | booking-service setup, Flyway migrations, Service JWT handshake | COMPLETE |
 | 7 | booking-service: Hold Creation | POST /holds — SETNX gate, all-or-nothing, Postgres writes | NOT STARTED |
 | 8 | booking-service: Booking Confirmation | POST /bookings — crash-safe order, idempotency, confirmationNumber | NOT STARTED |
 | 9 | booking-service: Hold Expiry Job | @Scheduled 60s, SKIP LOCKED, retry + batch halving | NOT STARTED |

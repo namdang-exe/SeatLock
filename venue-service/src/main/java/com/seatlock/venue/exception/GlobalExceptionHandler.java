@@ -1,5 +1,6 @@
 package com.seatlock.venue.exception;
 
+import com.seatlock.common.exception.SlotNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -11,6 +12,12 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(SlotNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleSlotNotFound(SlotNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("code", ex.getErrorCode(), "message", ex.getMessage()));
+    }
 
     @ExceptionHandler(VenueNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleVenueNotFound(VenueNotFoundException ex) {

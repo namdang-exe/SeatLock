@@ -1,4 +1,4 @@
-package com.seatlock.venue.security;
+package com.seatlock.booking.security;
 
 import com.seatlock.common.security.JwtUtils;
 import io.jsonwebtoken.Claims;
@@ -26,11 +26,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        return request.getRequestURI().startsWith("/api/v1/internal/");
-    }
-
-    @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
@@ -45,7 +40,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         email, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
                 SecurityContextHolder.getContext().setAuthentication(auth);
             } catch (JwtException ignored) {
-                // invalid/expired token — let it fall through; protected endpoints will return 401/403
+                // invalid/expired token — let it fall through; protected endpoints will return 401
             }
         }
         chain.doFilter(request, response);

@@ -6,21 +6,21 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
 @ActiveProfiles("test")
-abstract class AbstractIntegrationTest {
+public abstract class AbstractIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15");
+    static final PostgreSQLContainer<?> postgres;
+    static final GenericContainer<?> redis;
 
-    @Container
-    @SuppressWarnings("resource")
-    static GenericContainer<?> redis = new GenericContainer<>("redis:7")
-            .withExposedPorts(6379);
+    static {
+        postgres = new PostgreSQLContainer<>("postgres:15");
+        postgres.start();
+
+        redis = new GenericContainer<>("redis:7").withExposedPorts(6379);
+        redis.start();
+    }
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {

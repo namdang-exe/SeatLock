@@ -36,6 +36,8 @@ management:
 seatlock:
   jwt:
     secret: "changeme-use-vault-in-production-minimum-32ch"
+  service-jwt:
+    secret: "local-dev-shared-secret-replace-in-prod-12345"
   slot:
     duration-minutes: 60
   cache:
