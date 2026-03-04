@@ -5,6 +5,64 @@
 
 ---
 
+## Session 2026-03-03 — Stages 8 + 9: Booking Confirmation + Hold Expiry Job
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 8 — booking-service: Booking Confirmation (continuing from Stage 7)
+**Ended at:** Stage 9 COMPLETE. Stage 10 is next.
+
+### What Was Accomplished
+
+**Stage 8: `POST /api/v1/bookings` fully implemented** — all 8 steps of the spec operation sequence, Postgres-before-Redis-DEL (ADR-008):
+
+- `BookingController` → `BookingService.confirmBooking(sessionId, userId)`
+- Step 0: idempotency check (`findBySessionIdAndStatus(CONFIRMED)`)
+- Steps 1–3: load active holds → authorize user → verify Redis keys match
+- Step 4: generate confirmation number (`SL-YYYYMMDD-XXXX`)
+- Step 5: Postgres transaction via `TransactionTemplate` — INSERT bookings, UPDATE holds to CONFIRMED, UPDATE slots to BOOKED
+- Step 6: Redis DEL hold keys AFTER commit (ADR-008 order enforced)
+- Step 7: publish `BookingConfirmedEvent` (no-op stub)
+- `ConfirmationNumberGenerator`: UTC date + 4-digit random
+- 4 new exception classes: `SessionNotFoundException`, `HoldExpiredException`, `HoldMismatchException`, `ForbiddenException`
+- `GlobalExceptionHandler` updated with 4 new handlers
+- 6 unit tests (`BookingServiceTest`): idempotency, session not found, forbidden, hold expired, hold mismatch, happy path
+- 5 integration tests (`BookingControllerIT`): happy path + DB assertions, expired hold 409, mismatch 409, idempotent replay, crash-recovery simulation
+
+**Stage 9: Hold Expiry Job implemented** — `@Scheduled` background job using SKIP LOCKED:
+
+- `HoldExpiryJob` Spring `@Component` with `@Scheduled(initialDelay, fixedDelay)`
+- SELECT FOR UPDATE SKIP LOCKED — safe across multiple service instances
+- `AND status = 'ACTIVE'` guard on holds UPDATE (belt-and-suspenders)
+- `AND status = 'HELD'` guard on slots UPDATE (prevents resetting a BOOKED slot)
+- NO Redis operation — TTL fires automatically; explicit DEL would signal wrong intent
+- Retry on `PessimisticLockingFailureException`: 3 retries with exponential backoff (`backoff * 2^attempt`), then halve batch size
+- `HoldExpiredEvent` grouped by sessionId: one event per session with list of expired slotIds
+- `@EnableScheduling` added to `BookingServiceApplication`
+- Unit tests: 5 tests — no holds, happy path, multi-hold same session grouped, retry once, max retries + batch halving
+- Integration tests: 3 tests — expired → EXPIRED + AVAILABLE, non-expired → untouched, 10-hold concurrent SKIP LOCKED test
+
+### Decisions Made This Session
+
+- `TransactionTemplate` (not `@Transactional`) for `HoldExpiryJob` — same pattern as `HoldService`/`BookingService`; keeps Redis/event operations outside DB transaction
+- NO Redis DEL in expiry job — TTL on `hold:{slotId}` expires at the same time as the hold; explicit DEL signals wrong intent and is a no-op anyway
+- `HoldExpiredEvent` grouped by sessionId — spec says one event per session with list of `expiredSlotIds`; per-hold events would require the consumer to reassemble them
+- `initial-delay-ms: 3600000` in test profile — `fixedDelay` fires immediately on startup without `initialDelay`; large initial delay prevents auto-run during IT execution
+- `retry-backoff-base-ms: 0` in test profile — eliminates `Thread.sleep()` in retry tests
+- `ExpiredHoldRow` as a package-private nested record — accessible from same-package unit tests without needing public API surface
+
+### Bugs / Surprises
+
+None — all tests passed on first compile run for both stages.
+
+### Next Session
+
+**Start with Stage 10: booking-service Cancellation + History.**
+- Read only the Stage 10 section of `CODING_PLAN.md` before starting
+- `DELETE /api/v1/bookings/{bookingId}` + `GET /api/v1/bookings` (history)
+- Need to DEL Redis hold key in cancellation flow (per ADR: stale keys block new holds for up to 30 min)
+
+---
+
 ## Session 2026-03-03 — Stage 7: booking-service Hold Creation
 
 **Phase:** 1 — Foundation

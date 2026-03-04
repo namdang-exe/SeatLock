@@ -22,7 +22,7 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 6 | booking-service: Foundation + Service JWT | COMPLETE |
 | 7 | booking-service: Hold Creation | NOT STARTED |
 | 8 | booking-service: Booking Confirmation | NOT STARTED |
-| 9 | booking-service: Hold Expiry Job | NOT STARTED |
+| 9 | booking-service: Hold Expiry Job | COMPLETE |
 | 10 | booking-service: Cancellation + History | NOT STARTED |
 | 11 | notification-service | NOT STARTED |
 | 12 | Resilience | NOT STARTED |
@@ -742,7 +742,9 @@ If the service crashes between steps 5 and 6, Postgres has the confirmed booking
 
 ## Stage 9 — booking-service: Hold Expiry Job
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
+
+**Completed:** 2026-03-03. All acceptance criteria met.
 
 **Goal:** Background job that expiries stale holds and returns slots to AVAILABLE. Runs every 60s. Uses `SELECT FOR UPDATE SKIP LOCKED` to be safe across multiple service instances.
 
@@ -809,15 +811,15 @@ Start two instances of the expiry job targeting the same test database. Insert 1
 - Integration: expired holds are moved to EXPIRED status; slots return to AVAILABLE; SKIP LOCKED prevents double-expiry; holds not yet expired are untouched
 
 ### Acceptance Criteria
-- [ ] Job runs every 60 seconds (verify with a test using `@SpyBean` or a short `fixedDelay` in test profile)
-- [ ] Expired holds (`expires_at < now()`) are set to `EXPIRED` status
-- [ ] Corresponding slots are returned to `AVAILABLE`
-- [ ] Non-expired holds are untouched
-- [ ] `AND status = 'ACTIVE'` guard prevents double-expiry
-- [ ] Retry fires on simulated deadlock (inject via test)
-- [ ] Batch size halves after all retries exhausted
-- [ ] SKIP LOCKED concurrent instance test: 10 expired holds → each expired exactly once
-- [ ] All unit and integration tests pass
+- [x] Job runs every 60 seconds (`@Scheduled` with configurable `interval-ms`; large `initial-delay-ms` in tests prevents auto-run)
+- [x] Expired holds (`expires_at < now()`) are set to `EXPIRED` status
+- [x] Corresponding slots are returned to `AVAILABLE`
+- [x] Non-expired holds are untouched
+- [x] `AND status = 'ACTIVE'` guard prevents double-expiry (belt-and-suspenders alongside SKIP LOCKED)
+- [x] Retry fires on simulated deadlock (unit test: mock throws `PessimisticLockingFailureException`)
+- [x] Batch size halves after all retries exhausted
+- [x] SKIP LOCKED concurrent instance test: 10 expired holds → each expired exactly once
+- [x] All unit and integration tests pass
 
 ---
 
