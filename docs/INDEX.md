@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–7 complete, Stage 8 next |
-| Current implementation stage | Stage 8 — booking-service: Booking Confirmation |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–8 complete, Stage 9 next |
+| Current implementation stage | Stage 9 — booking-service: Hold Expiry Job |
 
 ---
 
@@ -105,6 +105,7 @@
 | POST | `/api/v1/admin/venues/{venueId}/slots/generate` | venue-service | 201 Created / 403 (non-ADMIN) | 4 |
 | GET | `/api/v1/internal/slots?ids=...` | venue-service | 200 OK / 401 (no/bad service JWT) / 404 SLOT_NOT_FOUND | 6 |
 | POST | `/api/v1/holds` | booking-service | 200 OK / 400 MISSING_IDEMPOTENCY_KEY / 404 SLOT_NOT_FOUND / 409 SLOT_NOT_AVAILABLE / 503 SERVICE_UNAVAILABLE | 7 |
+| POST | `/api/v1/bookings` | booking-service | 201 Created / 404 SESSION_NOT_FOUND / 403 FORBIDDEN / 409 HOLD_EXPIRED / 409 HOLD_MISMATCH | 8 |
 
 ---
 
@@ -229,6 +230,29 @@
 | `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` | 4 unit tests: idempotency check, SETNX rollback, PG row-count mismatch, happy path |
 | `booking-service/src/integrationTest/java/com/seatlock/booking/controller/HoldControllerIT.java` | 5 ITs: happy path (Redis TTL + PG state), 400, 409 SETNX fail, 409 PG mismatch, idempotent replay, concurrency (10 threads → 1 wins) |
 
+### Stage 8 — booking-service: Booking Confirmation
+
+| File | Purpose |
+|------|---------|
+| `booking-service/src/main/java/com/seatlock/booking/dto/BookingRequest.java` | Validated request: `sessionId` UUID |
+| `booking-service/src/main/java/com/seatlock/booking/dto/BookingResponse.java` | Response: `confirmationNumber`, `sessionId`, `bookings[]` |
+| `booking-service/src/main/java/com/seatlock/booking/event/BookingConfirmedEvent.java` | Event record for SQS publish (Stage 11) |
+| `booking-service/src/main/java/com/seatlock/booking/event/BookingEventPublisher.java` | Publisher interface |
+| `booking-service/src/main/java/com/seatlock/booking/event/NoOpBookingEventPublisher.java` | No-op stub; replaced with SQS in Stage 11 |
+| `booking-service/src/main/java/com/seatlock/booking/service/ConfirmationNumberGenerator.java` | Generates `SL-YYYYMMDD-XXXX` |
+| `booking-service/src/main/java/com/seatlock/booking/service/BookingService.java` | Steps 0–8; `TransactionTemplate` for Postgres phase; Postgres commits BEFORE Redis DEL |
+| `booking-service/src/main/java/com/seatlock/booking/controller/BookingController.java` | `POST /api/v1/bookings` → 201 |
+| `booking-service/src/main/java/com/seatlock/booking/exception/SessionNotFoundException.java` | → 404 SESSION_NOT_FOUND |
+| `booking-service/src/main/java/com/seatlock/booking/exception/HoldExpiredException.java` | → 409 HOLD_EXPIRED |
+| `booking-service/src/main/java/com/seatlock/booking/exception/HoldMismatchException.java` | → 409 HOLD_MISMATCH |
+| `booking-service/src/main/java/com/seatlock/booking/exception/ForbiddenException.java` | → 403 FORBIDDEN |
+| `booking-service/src/main/java/com/seatlock/booking/redis/RedisHoldRepository.java` | Added `getHold(slotId)` → `Optional<HoldPayload>` |
+| `booking-service/src/main/java/com/seatlock/booking/repository/BookingRepository.java` | Added `findBySessionIdAndStatus` |
+| `booking-service/src/main/java/com/seatlock/booking/repository/HoldRepository.java` | Added `updateStatusBySessionId` (`@Modifying` JPQL) |
+| `booking-service/src/main/java/com/seatlock/booking/exception/GlobalExceptionHandler.java` | Added handlers for all 4 new exceptions |
+| `booking-service/src/test/java/com/seatlock/booking/service/BookingServiceTest.java` | 6 unit tests: idempotency, session not found, forbidden, expired, mismatch, happy path |
+| `booking-service/src/integrationTest/java/com/seatlock/booking/controller/BookingControllerIT.java` | 5 ITs: happy path, HOLD_EXPIRED, HOLD_MISMATCH, idempotent replay, crash-recovery simulation |
+
 ---
 
 ## Implementation Plan
@@ -244,7 +268,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 5 | venue-service: Availability Cache | Redis cache for slots, cache miss → Postgres fallback | COMPLETE |
 | 6 | booking-service: Foundation + Service JWT | booking-service setup, Flyway migrations, Service JWT handshake | COMPLETE |
 | 7 | booking-service: Hold Creation | POST /holds — SETNX gate, all-or-nothing, Postgres writes | COMPLETE |
-| 8 | booking-service: Booking Confirmation | POST /bookings — crash-safe order, idempotency, confirmationNumber | NOT STARTED |
+| 8 | booking-service: Booking Confirmation | POST /bookings — crash-safe order, idempotency, confirmationNumber | COMPLETE |
 | 9 | booking-service: Hold Expiry Job | @Scheduled 60s, SKIP LOCKED, retry + batch halving | NOT STARTED |
 | 10 | booking-service: Cancellation + History | POST cancel, GET history, admin view, stale key cleanup | NOT STARTED |
 | 11 | notification-service | SQS consumer, email/SMS dispatch, ElasticMQ in Docker Compose | NOT STARTED |

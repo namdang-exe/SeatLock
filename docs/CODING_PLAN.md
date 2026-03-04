@@ -643,7 +643,7 @@ Launch 10 threads simultaneously, all calling `POST /api/v1/holds` for the same 
 
 ## Stage 8 — booking-service: Booking Confirmation
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** Implement `POST /api/v1/bookings`. **Critical: Postgres commits before Redis DEL** (ADR-008 crash-safety decision). Follow the operation sequence exactly.
 
@@ -727,16 +727,16 @@ If the service crashes between steps 5 and 6, Postgres has the confirmed booking
 - Integration: happy path, HOLD_EXPIRED, HOLD_MISMATCH, idempotent replay, crash-recovery simulation
 
 ### Acceptance Criteria
-- [ ] `POST /api/v1/bookings` returns 201 with `confirmationNumber` format `SL-YYYYMMDD-XXXX`
-- [ ] Same `confirmationNumber` on all booking rows in a multi-slot session
-- [ ] `slots.status` is `BOOKED` after confirmation
-- [ ] `holds.status` is `CONFIRMED` after confirmation
-- [ ] Redis hold keys are deleted after Postgres commits
-- [ ] Expired hold (Redis key missing) → 409 `HOLD_EXPIRED`
-- [ ] holdId mismatch → 409 `HOLD_MISMATCH`
-- [ ] Second `POST /bookings` with same sessionId → 201 with existing data (idempotent)
-- [ ] Crash-recovery test passes: Postgres committed but Redis DEL skipped → retry returns 201
-- [ ] All unit and integration tests pass
+- [x] `POST /api/v1/bookings` returns 201 with `confirmationNumber` format `SL-YYYYMMDD-XXXX`
+- [x] Same `confirmationNumber` on all booking rows in a multi-slot session
+- [x] `slots.status` is `BOOKED` after confirmation
+- [x] `holds.status` is `CONFIRMED` after confirmation
+- [x] Redis hold keys are deleted after Postgres commits
+- [x] Expired hold (Redis key missing) → 409 `HOLD_EXPIRED`
+- [x] holdId mismatch → 409 `HOLD_MISMATCH`
+- [x] Second `POST /bookings` with same sessionId → 201 with existing data (idempotent)
+- [x] Crash-recovery test passes: Postgres committed but Redis DEL skipped → retry returns 201
+- [x] All unit and integration tests pass
 
 ---
 

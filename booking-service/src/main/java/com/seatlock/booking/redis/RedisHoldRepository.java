@@ -69,6 +69,20 @@ public class RedisHoldRepository {
         }
     }
 
+    /**
+     * Returns the deserialized HoldPayload for the given slotId, or empty if the key
+     * is absent or cannot be parsed (treated as expired).
+     */
+    public java.util.Optional<HoldPayload> getHold(UUID slotId) {
+        String raw = redisTemplate.opsForValue().get(HOLD_KEY_PREFIX + slotId);
+        if (raw == null) return java.util.Optional.empty();
+        try {
+            return java.util.Optional.of(objectMapper.readValue(raw, HoldPayload.class));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
     /** Exposed for tests — returns the raw Redis value for a hold key. */
     public String getRawHold(UUID slotId) {
         return redisTemplate.opsForValue().get(HOLD_KEY_PREFIX + slotId);

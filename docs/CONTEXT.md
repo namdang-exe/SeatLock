@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–7 complete, Stage 8 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–8 complete, Stage 9 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -135,6 +135,14 @@
 - We chose **raw `@Column(name = "venue_id") UUID` on Slot** (no `@ManyToOne` relationship) because the service never navigates from Slot to Venue at runtime; the raw UUID avoids unnecessary lazy-load configuration.
 - We chose **GET endpoints fully public** (no Bearer token required) for venue-service browse endpoints (`GET /venues`, `GET /venues/{id}/slots`) because "browse before login" is natural product behaviour and avoids coupling the browsing experience to auth availability.
 - We confirmed **status filter applied in service/app layer** (not SQL) on the slot query so the full slot list can be stored as a single Redis cache key in Stage 5 and any status-filtered variant can be served from it without a separate cache entry.
+
+### Implementation Decisions (Phase 1 — Stage 8)
+
+- We chose **`SlotVerificationClient.verify()` in `BookingService`** (best-effort, exception caught) to get the venueId needed for `DEL slots:{venueId}:{date}` in the booking confirmation Redis cleanup. This is a pragmatic Phase 0 choice — the venueId is not stored on Hold/Booking entities, and the call is lightweight. Failure is silently caught; the 5s TTL is the safety net.
+- We chose **`@Modifying @Transactional @Query` on `HoldRepository.updateStatusBySessionId`** to update holds in the same `TransactionTemplate` transaction as the booking INSERT and slot UPDATE. The JPQL UPDATE joins the existing transaction via `REQUIRED` propagation.
+- We chose a **`NoOpBookingEventPublisher` stub** implementing `BookingEventPublisher` interface so Stage 8 is complete without SQS — the interface is ready to be swapped for the real publisher in Stage 11. The try/catch in `BookingService` ensures event publishing failure never affects the booking response.
+- We chose **reflection to set `holdId` in `BookingServiceTest`** since `Hold.holdId` is initialized via field declaration (`UUID.randomUUID()`) with no setter. This is test-only; production code always uses the auto-generated value.
+- We chose to **retrieve the `venueId` before the `TransactionTemplate` block** so it is available for the post-commit Redis DEL. This keeps the Postgres transaction short and ensures the cache invalidation data is ready immediately after commit.
 
 ### Implementation Decisions (Phase 1 — Stage 7)
 

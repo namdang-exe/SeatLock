@@ -40,6 +40,26 @@ public class GlobalExceptionHandler {
                 "Hold service temporarily unavailable. Please try again.");
     }
 
+    @ExceptionHandler(SessionNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleSessionNotFound(SessionNotFoundException ex) {
+        return error(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", ex.getMessage());
+    }
+
+    @ExceptionHandler(HoldExpiredException.class)
+    public ResponseEntity<Map<String, Object>> handleHoldExpired(HoldExpiredException ex) {
+        return error(HttpStatus.CONFLICT, "HOLD_EXPIRED", ex.getMessage());
+    }
+
+    @ExceptionHandler(HoldMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleHoldMismatch(HoldMismatchException ex) {
+        return error(HttpStatus.CONFLICT, "HOLD_MISMATCH", ex.getMessage());
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<Map<String, Object>> handleForbidden(ForbiddenException ex) {
+        return error(HttpStatus.FORBIDDEN, "FORBIDDEN", ex.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
