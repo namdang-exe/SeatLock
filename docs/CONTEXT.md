@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–8 complete, Stage 9 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–9 complete, Stage 10 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -136,6 +136,15 @@
 - We chose **GET endpoints fully public** (no Bearer token required) for venue-service browse endpoints (`GET /venues`, `GET /venues/{id}/slots`) because "browse before login" is natural product behaviour and avoids coupling the browsing experience to auth availability.
 - We confirmed **status filter applied in service/app layer** (not SQL) on the slot query so the full slot list can be stored as a single Redis cache key in Stage 5 and any status-filtered variant can be served from it without a separate cache entry.
 
+### Implementation Decisions (Phase 1 — Stage 9)
+
+- We chose **NO Redis DEL in the hold expiry job** because the `hold:{slotId}` Redis key is set with a 1800s TTL that expires at the same time as the hold's `expires_at`. By the time the `@Scheduled` job processes a hold (`expires_at < NOW()`), the Redis key has already been removed by TTL. Attempting a DEL would be a no-op and signals incorrect intent — the cleanup is handled automatically by the TTL mechanism, not by explicit deletion.
+- We chose **`AND status = 'ACTIVE'` on the holds UPDATE and `AND status = 'HELD'` on the slots UPDATE** as belt-and-suspenders guards alongside SELECT FOR UPDATE SKIP LOCKED. In theory, SKIP LOCKED prevents another instance from processing the same rows. In practice, the guards protect against any edge case where a slot might have transitioned to BOOKED (via a concurrent confirmation) between the SELECT and the UPDATE.
+- We chose **`HoldExpiredEvent` grouped by sessionId** (one event per session with a list of `expiredSlotIds`) rather than one event per hold because the spec requires `HoldExpiredEvent { sessionId, userId, expiredSlotIds, timestamp }` — the notification-service consumer needs to notify once per session, not per slot.
+- We chose **`initialDelayString` on `@Scheduled`** in addition to `fixedDelayString` because `fixedDelay` without `initialDelay` fires the first execution immediately at application startup. With `initial-delay-ms: 3600000` in the test profile, the job never auto-fires during integration test runs; each IT calls `holdExpiryJob.expireHolds()` manually.
+- We chose **`retry-backoff-base-ms: 0` in the test profile** so that retry tests don't sleep in CI. The production value `retry-backoff-base-ms: 500` gives 500ms, 1s, 2s exponential backoff on lock contention.
+- We chose **`ExpiredHoldRow` as a package-private nested record** inside `HoldExpiryJob` (no access modifier) because it is an internal transfer object used only within the job. Declaring it package-private (not private) makes it accessible from `HoldExpiryJobTest` in the same Java package without exposing it as public API.
+
 ### Implementation Decisions (Phase 1 — Stage 8)
 
 - We chose **`SlotVerificationClient.verify()` in `BookingService`** (best-effort, exception caught) to get the venueId needed for `DEL slots:{venueId}:{date}` in the booking confirmation Redis cleanup. This is a pragmatic Phase 0 choice — the venueId is not stored on Hold/Booking entities, and the call is lightweight. Failure is silently caught; the 5s TTL is the safety net.
@@ -251,6 +260,19 @@
 | `docs/diagrams/04-data-model-erd.md` | ERD — all 5 tables, PKs, FKs, indexes |
 | `docs/diagrams/05-infrastructure.md` | AWS infrastructure topology |
 | `docs/BUGS.md` | Critical bug/fix log — symptom, root cause, fix, files changed |
+
+**Implementation (Phase 1 — Stage 9 complete):**
+| File | Contents |
+|------|----------|
+| `booking-service/src/main/java/com/seatlock/booking/BookingServiceApplication.java` | Added `@EnableScheduling` |
+| `booking-service/src/main/java/com/seatlock/booking/event/HoldExpiredEvent.java` | `record(sessionId, userId, expiredSlotIds, timestamp)` — grouped by session |
+| `booking-service/src/main/java/com/seatlock/booking/event/BookingEventPublisher.java` | Added `publishHoldExpired(HoldExpiredEvent)` |
+| `booking-service/src/main/java/com/seatlock/booking/event/NoOpBookingEventPublisher.java` | Added no-op `publishHoldExpired` stub |
+| `booking-service/src/main/java/com/seatlock/booking/service/HoldExpiryJob.java` | `@Scheduled` expiry job: SKIP LOCKED, retry + batch halving, no Redis DEL |
+| `booking-service/src/main/resources/application.yml` | Added `seatlock.expiry.*` config block |
+| `booking-service/src/test/resources/application-test.yml` | Added test expiry config (`initial-delay-ms: 3600000`, `retry-backoff-base-ms: 0`) |
+| `booking-service/src/test/java/com/seatlock/booking/service/HoldExpiryJobTest.java` | 5 unit tests: no holds, happy path, multi-hold grouping, retry, batch halving |
+| `booking-service/src/integrationTest/java/com/seatlock/booking/service/HoldExpiryJobIT.java` | 3 ITs: expired→EXPIRED+AVAILABLE, non-expired untouched, 10-hold SKIP LOCKED concurrent |
 
 **Implementation (Phase 1 — Stage 7 complete):**
 | File | Contents |

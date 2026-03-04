@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–8 complete, Stage 9 next |
-| Current implementation stage | Stage 9 — booking-service: Hold Expiry Job |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–9 complete, Stage 10 next |
+| Current implementation stage | Stage 10 — booking-service: Cancellation + History |
 
 ---
 
@@ -269,7 +269,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 6 | booking-service: Foundation + Service JWT | booking-service setup, Flyway migrations, Service JWT handshake | COMPLETE |
 | 7 | booking-service: Hold Creation | POST /holds — SETNX gate, all-or-nothing, Postgres writes | COMPLETE |
 | 8 | booking-service: Booking Confirmation | POST /bookings — crash-safe order, idempotency, confirmationNumber | COMPLETE |
-| 9 | booking-service: Hold Expiry Job | @Scheduled 60s, SKIP LOCKED, retry + batch halving | NOT STARTED |
+| 9 | booking-service: Hold Expiry Job | @Scheduled 60s, SKIP LOCKED, retry + batch halving | COMPLETE |
 | 10 | booking-service: Cancellation + History | POST cancel, GET history, admin view, stale key cleanup | NOT STARTED |
 | 11 | notification-service | SQS consumer, email/SMS dispatch, ElasticMQ in Docker Compose | NOT STARTED |
 | 12 | Resilience | Redis 503 degraded mode, Vault fail-fast, circuit breaker, retries | NOT STARTED |
@@ -277,6 +277,20 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 14 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | NOT STARTED |
 | 15 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | NOT STARTED |
 | 16 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | NOT STARTED |
+
+### Stage 9 — booking-service: Hold Expiry Job
+
+| File | Purpose |
+|------|---------|
+| `booking-service/src/main/java/com/seatlock/booking/BookingServiceApplication.java` | Added `@EnableScheduling` |
+| `booking-service/src/main/java/com/seatlock/booking/event/HoldExpiredEvent.java` | Event record: `{sessionId, userId, expiredSlotIds, timestamp}` — one per session |
+| `booking-service/src/main/java/com/seatlock/booking/event/BookingEventPublisher.java` | Added `publishHoldExpired(HoldExpiredEvent)` to interface |
+| `booking-service/src/main/java/com/seatlock/booking/event/NoOpBookingEventPublisher.java` | No-op stub for `publishHoldExpired`; replaced with SQS in Stage 11 |
+| `booking-service/src/main/java/com/seatlock/booking/service/HoldExpiryJob.java` | `@Scheduled` job: SELECT FOR UPDATE SKIP LOCKED; `AND status='ACTIVE'/'HELD'` guards; retry 3× with exponential backoff; halve batch on exhaustion; NO Redis DEL (TTL handles cleanup); events grouped by sessionId |
+| `booking-service/src/main/resources/application.yml` | Added `seatlock.expiry.*`: `batch-size: 500`, `max-retries: 3`, `retry-backoff-base-ms: 500`, `interval-ms: 60000`, `initial-delay-ms: 10000` |
+| `booking-service/src/test/resources/application-test.yml` | Added test expiry overrides: `initial-delay-ms: 3600000`, `interval-ms: 3600000`, `retry-backoff-base-ms: 0` |
+| `booking-service/src/test/java/com/seatlock/booking/service/HoldExpiryJobTest.java` | 5 unit tests: no holds, happy path (event grouped by session), multi-hold same session, retry once, max retries + batch halving |
+| `booking-service/src/integrationTest/java/com/seatlock/booking/service/HoldExpiryJobIT.java` | 3 ITs: expired hold → EXPIRED + slot AVAILABLE; non-expired → untouched; 10-hold concurrent SKIP LOCKED |
 
 ---
 
