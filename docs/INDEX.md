@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–9 complete, Stage 10 next |
-| Current implementation stage | Stage 10 — booking-service: Cancellation + History |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–10 complete, Stage 11 next |
+| Current implementation stage | Stage 11 — notification-service |
 
 ---
 
@@ -106,6 +106,9 @@
 | GET | `/api/v1/internal/slots?ids=...` | venue-service | 200 OK / 401 (no/bad service JWT) / 404 SLOT_NOT_FOUND | 6 |
 | POST | `/api/v1/holds` | booking-service | 200 OK / 400 MISSING_IDEMPOTENCY_KEY / 404 SLOT_NOT_FOUND / 409 SLOT_NOT_AVAILABLE / 503 SERVICE_UNAVAILABLE | 7 |
 | POST | `/api/v1/bookings` | booking-service | 201 Created / 404 SESSION_NOT_FOUND / 403 FORBIDDEN / 409 HOLD_EXPIRED / 409 HOLD_MISMATCH | 8 |
+| POST | `/api/v1/bookings/{confirmationNumber}/cancel` | booking-service | 200 OK / 404 BOOKING_NOT_FOUND / 403 FORBIDDEN / 409 CANCELLATION_WINDOW_CLOSED | 10 |
+| GET | `/api/v1/bookings` | booking-service | 200 OK (user history, grouped by session) | 10 |
+| GET | `/api/v1/admin/venues/{venueId}/bookings` | booking-service | 200 OK / 403 (non-ADMIN) | 10 |
 
 ---
 
@@ -270,13 +273,35 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 7 | booking-service: Hold Creation | POST /holds — SETNX gate, all-or-nothing, Postgres writes | COMPLETE |
 | 8 | booking-service: Booking Confirmation | POST /bookings — crash-safe order, idempotency, confirmationNumber | COMPLETE |
 | 9 | booking-service: Hold Expiry Job | @Scheduled 60s, SKIP LOCKED, retry + batch halving | COMPLETE |
-| 10 | booking-service: Cancellation + History | POST cancel, GET history, admin view, stale key cleanup | NOT STARTED |
+| 10 | booking-service: Cancellation + History | POST cancel, GET history, admin view, stale key cleanup | COMPLETE |
 | 11 | notification-service | SQS consumer, email/SMS dispatch, ElasticMQ in Docker Compose | NOT STARTED |
 | 12 | Resilience | Redis 503 degraded mode, Vault fail-fast, circuit breaker, retries | NOT STARTED |
 | 13 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | NOT STARTED |
 | 14 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | NOT STARTED |
 | 15 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | NOT STARTED |
 | 16 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | NOT STARTED |
+
+### Stage 10 — booking-service: Cancellation + History
+
+| File | Purpose |
+|------|---------|
+| `booking-service/src/main/java/com/seatlock/booking/event/BookingCancelledEvent.java` | Event record: `{confirmationNumber, sessionId, userId, cancelledSlotIds, timestamp}` |
+| `booking-service/src/main/java/com/seatlock/booking/exception/BookingNotFoundException.java` | → 404 BOOKING_NOT_FOUND |
+| `booking-service/src/main/java/com/seatlock/booking/exception/CancellationWindowClosedException.java` | → 409 CANCELLATION_WINDOW_CLOSED |
+| `booking-service/src/main/java/com/seatlock/booking/dto/CancelResponse.java` | Cancel response: `{confirmationNumber, cancelledAt, bookings[]}` |
+| `booking-service/src/main/java/com/seatlock/booking/dto/BookingHistoryResponse.java` | History response: sessions grouped by confirmationNumber |
+| `booking-service/src/main/java/com/seatlock/booking/dto/AdminBookingResponse.java` | Admin view: flat list of confirmed bookings for a venue |
+| `booking-service/src/main/java/com/seatlock/booking/service/CancellationService.java` | 8-step cancel; `getHistory`; `getAdminBookings`; ADR-008 stale key DEL |
+| `booking-service/src/main/java/com/seatlock/booking/controller/BookingController.java` | Added `POST /{cn}/cancel` + `GET /bookings` (history) |
+| `booking-service/src/main/java/com/seatlock/booking/controller/AdminBookingController.java` | `GET /api/v1/admin/venues/{venueId}/bookings` (ADMIN role) |
+| `booking-service/src/main/java/com/seatlock/booking/event/BookingEventPublisher.java` | Added `publishBookingCancelled` method |
+| `booking-service/src/main/java/com/seatlock/booking/event/NoOpBookingEventPublisher.java` | No-op stub for `publishBookingCancelled` |
+| `booking-service/src/main/java/com/seatlock/booking/exception/GlobalExceptionHandler.java` | Added BOOKING_NOT_FOUND + CANCELLATION_WINDOW_CLOSED handlers |
+| `booking-service/src/main/java/com/seatlock/booking/security/SecurityConfig.java` | Added `/api/v1/admin/**` → ADMIN role check |
+| `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Extended: nullable `venue_id`/`start_time` on slots; added venues stub table |
+| `booking-service/src/integrationTest/java/com/seatlock/booking/controller/HoldControllerIT.java` | Fixed setUp delete order: bookings → holds (FK-safe) |
+| `booking-service/src/test/java/com/seatlock/booking/service/CancellationServiceTest.java` | 5 unit tests: not found, forbidden, convergence, window checks, happy path |
+| `booking-service/src/integrationTest/java/com/seatlock/booking/controller/CancellationControllerIT.java` | 6 ITs: cancel happy path (ADR-008 DEL), idempotent, 409 window, GET history, admin 200/403 |
 
 ### Stage 9 — booking-service: Hold Expiry Job
 

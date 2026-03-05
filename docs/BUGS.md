@@ -4,6 +4,28 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-04] HoldControllerIT fails with DataIntegrityViolationException after Stage 10
+
+**Stage:** 10 (booking-service: Cancellation + History)
+
+**Symptom:**
+All 6 tests in `HoldControllerIT` fail at `setUp()` with:
+`org.springframework.dao.DataIntegrityViolationException: ... PSQLException: ERROR: update or delete on table "holds" violates foreign key constraint "bookings_hold_id_fkey" on table "bookings"`
+
+**Root cause:**
+`HoldControllerIT.setUp()` deleted from `holds` before `bookings`. Previously this worked because no prior IT class left bookings in the Testcontainers DB. Stage 10 adds `CancellationControllerIT`, which creates and confirms bookings — those rows remain in the shared DB when `HoldControllerIT` runs next. The delete order `holds → slots → users` violates the FK `bookings.hold_id → holds.hold_id`.
+
+**Fix:**
+Prepend `jdbcTemplate.execute("DELETE FROM bookings")` in `HoldControllerIT.setUp()` so the delete order becomes FK-safe: `bookings → holds → slots → users`.
+
+**Files changed:**
+- `booking-service/src/integrationTest/java/com/seatlock/booking/controller/HoldControllerIT.java` — added `DELETE FROM bookings` as first delete statement in `setUp()`
+
+**Rule going forward:**
+Every IT class `setUp()` that truncates tables must use FK-safe order: child tables before parent tables. For booking-service: `bookings → holds → slots → users`.
+
+---
+
 ## [2026-03-03] @MockBean deprecated — compilation warning + wrong annotation
 
 **Stage:** 7 (booking-service: Hold Creation)

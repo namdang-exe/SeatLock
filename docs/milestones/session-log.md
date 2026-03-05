@@ -5,6 +5,53 @@
 
 ---
 
+## Session 2026-03-04 — Stage 10: Cancellation + History
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 10 (first NOT STARTED stage)
+**Ended at:** Stage 10 COMPLETE. Stage 11 (notification-service) is next.
+
+### What Was Accomplished
+
+**Stage 10 fully implemented** — all 8 steps of the cancellation sequence, all three endpoints, all tests green (24 unit tests, 21 integration tests):
+
+**`POST /api/v1/bookings/{confirmationNumber}/cancel`** (8-step sequence):
+- Step 1: JdbcTemplate JOIN query (bookings ⋈ slots) — no status filter
+- Step 2: authorize — all booking.userId must match JWT userId
+- Step 3: convergence check — CONFIRMED set empty → 200 with current state (no writes)
+- Step 4: 24h window check on CONFIRMED items — any violation → 409
+- Step 5: Postgres transaction — bookings CANCELLED + holds RELEASED + slots AVAILABLE
+- Step 6: Redis cleanup — `DEL hold:{slotId}` (ADR-008 stale key protection) + `DEL slots:{venueId}:{date}`
+- Step 7: `BookingCancelledEvent` published (no-op stub until Stage 11)
+- Step 8: response built from in-memory state (no extra DB round-trip)
+
+**`GET /api/v1/bookings`** — user booking history, LEFT JOIN venues, grouped by `confirmationNumber` in application layer via `LinkedHashMap`, ordered newest first.
+
+**`GET /api/v1/admin/venues/{venueId}/bookings`** — admin view of CONFIRMED bookings; optional `?date=` (UTC) filter; ADMIN role enforced by `SecurityConfig`.
+
+**New service/controller split:** `CancellationService` handles all read + cancel operations; `BookingController` extended with two new endpoints; `AdminBookingController` is a new class.
+
+### Bugs Fixed
+
+- **HoldControllerIT FK delete order** — `CancellationControllerIT` leaves confirmed bookings in the shared Testcontainers DB; `HoldControllerIT.setUp()` was deleting from `holds` before `bookings`, violating the FK constraint. Fixed by prepending `DELETE FROM bookings` → FK-safe order: bookings → holds → slots → users.
+
+### Design Deviations from Original Spec
+
+None. Implementation follows the exact operation sequence in `CODING_PLAN.md` Stage 10.
+
+### Gotchas / Surprises
+
+- **JDBC type safety for TIMESTAMPTZ:** `queryForList()` returns `Object` from the column map; the type is driver-version-dependent (`Timestamp` vs `OffsetDateTime`). Switched `getHistory` to a typed `RowMapper` using `rs.getTimestamp()` which consistently returns `java.sql.Timestamp`.
+- **V0 stub extension required:** The test stub `V0__create_stub_tables.sql` needed nullable `venue_id` and `start_time` added to `slots`, plus a new `venues` table for the `getHistory` LEFT JOIN. All existing tests still pass since those columns are nullable.
+- **`CancellationService.BookingWithSlot` as package-private record:** Declared without access modifier inside the service so `CancellationServiceTest` (same package) can construct instances for unit test stubs. Java member records are implicitly static; package-private access is the right scope.
+- **CODING_PLAN.md had stale statuses:** Stages 7 and 8 were still marked `NOT STARTED` in the overview table (carried over from old session). Fixed alongside Stage 10 update.
+
+### What the Next Session Should Do First
+
+Read Stage 11 in `CODING_PLAN.md`. Stage 11 = notification-service: SQS consumer (ElasticMQ in Docker Compose), `BookingConfirmedEvent` + `BookingCancelledEvent` + `HoldExpiredEvent` handling, email/SMS dispatch stubs. Replace the `NoOpBookingEventPublisher` in booking-service with a real SQS publisher.
+
+---
+
 ## Session 2026-03-03 — Stages 8 + 9: Booking Confirmation + Hold Expiry Job
 
 **Phase:** 1 — Foundation

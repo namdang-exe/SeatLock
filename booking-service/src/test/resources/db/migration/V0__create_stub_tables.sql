@@ -4,7 +4,14 @@ CREATE TABLE IF NOT EXISTS users (
     user_id UUID PRIMARY KEY
 );
 
+CREATE TABLE IF NOT EXISTS venues (
+    venue_id UUID PRIMARY KEY,
+    name     VARCHAR(200)
+);
+
 CREATE TABLE IF NOT EXISTS slots (
-    slot_id UUID PRIMARY KEY,
-    status  VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'
+    slot_id    UUID PRIMARY KEY,
+    venue_id   UUID,
+    status     VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
+    start_time TIMESTAMPTZ
 );

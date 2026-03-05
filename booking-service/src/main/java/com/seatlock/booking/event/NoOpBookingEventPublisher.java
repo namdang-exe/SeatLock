@@ -18,4 +18,9 @@ public class NoOpBookingEventPublisher implements BookingEventPublisher {
     public void publishHoldExpired(HoldExpiredEvent event) {
         // Stage 11: replace with SQS publish
     }
+
+    @Override
+    public void publishBookingCancelled(BookingCancelledEvent event) {
+        // Stage 11: replace with SQS publish
+    }
 }

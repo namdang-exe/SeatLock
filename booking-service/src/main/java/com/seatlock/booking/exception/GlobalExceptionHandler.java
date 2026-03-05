@@ -60,6 +60,16 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.FORBIDDEN, "FORBIDDEN", ex.getMessage());
     }
 
+    @ExceptionHandler(BookingNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleBookingNotFound(BookingNotFoundException ex) {
+        return error(HttpStatus.NOT_FOUND, "BOOKING_NOT_FOUND", ex.getMessage());
+    }
+
+    @ExceptionHandler(CancellationWindowClosedException.class)
+    public ResponseEntity<Map<String, Object>> handleCancellationWindowClosed(CancellationWindowClosedException ex) {
+        return error(HttpStatus.CONFLICT, "CANCELLATION_WINDOW_CLOSED", ex.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()

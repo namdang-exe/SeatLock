@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–9 complete, Stage 10 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–10 complete, Stage 11 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -144,6 +144,17 @@
 - We chose **`initialDelayString` on `@Scheduled`** in addition to `fixedDelayString` because `fixedDelay` without `initialDelay` fires the first execution immediately at application startup. With `initial-delay-ms: 3600000` in the test profile, the job never auto-fires during integration test runs; each IT calls `holdExpiryJob.expireHolds()` manually.
 - We chose **`retry-backoff-base-ms: 0` in the test profile** so that retry tests don't sleep in CI. The production value `retry-backoff-base-ms: 500` gives 500ms, 1s, 2s exponential backoff on lock contention.
 - We chose **`ExpiredHoldRow` as a package-private nested record** inside `HoldExpiryJob` (no access modifier) because it is an internal transfer object used only within the job. Declaring it package-private (not private) makes it accessible from `HoldExpiryJobTest` in the same Java package without exposing it as public API.
+
+### Implementation Decisions (Phase 1 — Stage 10)
+
+- We chose **`JdbcTemplate` native SQL queries (with `RowMapper`)** over Spring Data JPA repositories for all cancellation read queries (`loadForCancellation`, `getHistory`, `getAdminBookings`) because these are multi-table joins across entities that booking-service does not own (slots, venues). Creating JPA `@Entity` wrappers for cross-service tables would be misleading; JdbcTemplate is the correct tool for these ad-hoc joins on the shared-DB Phase 0 cluster.
+- We chose **`rs.getTimestamp()` (not map-based column access)** for TIMESTAMPTZ columns in cancellation queries because `queryForList()` returns raw JDBC types as `Object`, and casting to `Timestamp` vs `OffsetDateTime` varies by driver version. Using a typed `RowMapper` with `rs.getTimestamp()` guarantees consistent `java.sql.Timestamp` → `Instant` conversion across all JDBC driver versions.
+- We chose **package-private `record BookingWithSlot`** (no modifier) inside `CancellationService` so that `CancellationServiceTest` (same package `com.seatlock.booking.service`) can construct instances directly for unit test stubs, while keeping the record invisible outside the service package. Java member records are implicitly static; package-private access is sufficient for same-package tests.
+- We chose **`LEFT JOIN venues`** (not `INNER JOIN`) in the `getHistory` query so that a booking whose slot has a NULL `venue_id` (possible in the test stub and edge cases) is still returned with a null `venueName` instead of being silently dropped. The history endpoint must always show all user bookings regardless of data completeness.
+- We chose **convergence-first response construction** in `CancellationService.cancel()` — if the CONFIRMED set is empty, return immediately with the loaded data (no DB writes). This satisfies idempotency without a second DB query and mirrors the pattern used in `BookingService.confirmBooking()` (step 0 idempotency check).
+- We chose **`Instant cancelTime = Instant.now()` captured before the transaction** and used to build the response rather than re-querying the DB after commit, because the slight imprecision (Java clock vs Postgres `now()`) is acceptable and avoiding the extra round-trip keeps the cancel response fast. The DB-authoritative `cancelled_at` is what clients get if they subsequently call `GET /bookings`.
+- We chose **date-based SQL branching** (`if (date == null)`) for `getAdminBookings` instead of `? IS NULL OR DATE(s.start_time AT TIME ZONE 'UTC') = ?` because passing a null parameter for `? IS NULL` is driver-dependent and unreliable; explicit SQL variants are unambiguous and avoid the null-parameter edge case.
+- We fixed **FK-safe delete order in `HoldControllerIT.setUp()`** by prepending `DELETE FROM bookings` before `DELETE FROM holds`. Previously the test worked because no prior IT class left bookings behind; Stage 10's `CancellationControllerIT` creates and confirms bookings, which are left in the shared Testcontainers DB when `HoldControllerIT` runs next. The correct FK-safe delete order is: bookings → holds → slots → users.
 
 ### Implementation Decisions (Phase 1 — Stage 8)
 

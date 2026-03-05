@@ -20,10 +20,10 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 4 | venue-service: Venue + Slot CRUD | COMPLETE |
 | 5 | venue-service: Availability Cache | COMPLETE |
 | 6 | booking-service: Foundation + Service JWT | COMPLETE |
-| 7 | booking-service: Hold Creation | NOT STARTED |
-| 8 | booking-service: Booking Confirmation | NOT STARTED |
+| 7 | booking-service: Hold Creation | COMPLETE |
+| 8 | booking-service: Booking Confirmation | COMPLETE |
 | 9 | booking-service: Hold Expiry Job | COMPLETE |
-| 10 | booking-service: Cancellation + History | NOT STARTED |
+| 10 | booking-service: Cancellation + History | COMPLETE |
 | 11 | notification-service | NOT STARTED |
 | 12 | Resilience | NOT STARTED |
 | 13 | Observability | NOT STARTED |
@@ -825,7 +825,7 @@ Start two instances of the expiry job targeting the same test database. Insert 1
 
 ## Stage 10 — booking-service: Cancellation + History
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** Cancel bookings, booking history for users, admin bookings view. Includes the ADR-008 stale hold key cleanup.
 
@@ -908,15 +908,15 @@ Requires ADMIN role.
 - Integration: cancel happy path, already cancelled (idempotent 200), within 24h window (409), GET /bookings grouped correctly, admin endpoint (ADMIN vs USER role)
 
 ### Acceptance Criteria
-- [ ] `POST /cancel` cancels CONFIRMED bookings; slots return to AVAILABLE immediately
-- [ ] `holds.status` updated to RELEASED for cancelled session
-- [ ] `DEL hold:{slotId}` fires for each slot (no-op if key absent — no error thrown)
-- [ ] Cancelling already-cancelled bookings returns 200 (idempotent)
-- [ ] Any slot within 24h window blocks entire cancellation → 409 `CANCELLATION_WINDOW_CLOSED`
-- [ ] `GET /bookings` returns bookings grouped by `confirmationNumber`, ordered newest first
-- [ ] Admin `GET /admin/venues/{id}/bookings` returns confirmed bookings; USER gets 403
-- [ ] `BookingCancelledEvent` published (mocked)
-- [ ] All unit and integration tests pass
+- [x] `POST /cancel` cancels CONFIRMED bookings; slots return to AVAILABLE immediately
+- [x] `holds.status` updated to RELEASED for cancelled session
+- [x] `DEL hold:{slotId}` fires for each slot (no-op if key absent — no error thrown)
+- [x] Cancelling already-cancelled bookings returns 200 (idempotent)
+- [x] Any slot within 24h window blocks entire cancellation → 409 `CANCELLATION_WINDOW_CLOSED`
+- [x] `GET /bookings` returns bookings grouped by `confirmationNumber`, ordered newest first
+- [x] Admin `GET /admin/venues/{id}/bookings` returns confirmed bookings; USER gets 403
+- [x] `BookingCancelledEvent` published (mocked)
+- [x] All unit and integration tests pass
 
 ---
 

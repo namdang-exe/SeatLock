@@ -57,7 +57,8 @@ class HoldControllerIT extends AbstractIntegrationTest {
         slotId  = UUID.randomUUID();
         venueId = UUID.randomUUID();
 
-        // Clean up before each test
+        // Clean up before each test — FK-safe order: bookings → holds → slots → users
+        jdbcTemplate.execute("DELETE FROM bookings");
         jdbcTemplate.execute("DELETE FROM holds");
         jdbcTemplate.execute("DELETE FROM slots");
         jdbcTemplate.execute("DELETE FROM users");
