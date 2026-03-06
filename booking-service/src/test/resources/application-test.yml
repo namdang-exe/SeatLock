@@ -5,8 +5,19 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+  cloud:
+    aws:
+      region:
+        static: us-east-1
+      credentials:
+        access-key: test
+        secret-key: test
+      sqs:
+        endpoint: http://localhost:9324
 
 seatlock:
+  sqs:
+    queue-url: http://localhost:9324/000000000000/seatlock-events
   jwt:
     secret: "seatlock-test-jwt-secret-change-in-prod-32chars"
   service-jwt:

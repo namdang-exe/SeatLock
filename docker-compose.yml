@@ -25,17 +25,19 @@ services:
       timeout: 3s
       retries: 5
 
-  mailhog:
-    image: mailhog/mailhog
+  mailpit:
+    image: axllent/mailpit:latest
     ports:
       - "1025:1025"   # SMTP
-      - "8025:8025"   # Web UI
+      - "8025:8025"   # Web UI / REST API
 
   elasticmq:
     image: softwaremill/elasticmq-native:latest
     ports:
       - "9324:9324"   # SQS-compatible API
       - "9325:9325"   # Web UI
+    volumes:
+      - ./infra/elasticmq/elasticmq.conf:/opt/elasticmq.conf
 
 volumes:
   postgres_data:

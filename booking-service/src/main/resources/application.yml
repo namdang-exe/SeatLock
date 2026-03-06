@@ -22,6 +22,15 @@ spring:
   jackson:
     serialization:
       write-dates-as-timestamps: false
+  cloud:
+    aws:
+      region:
+        static: us-east-1
+      credentials:
+        access-key: local-access-key
+        secret-key: local-secret-key
+      sqs:
+        endpoint: http://localhost:9324
 
 management:
   endpoints:
@@ -39,6 +48,8 @@ seatlock:
     ttl-minutes: 5
   venue-service:
     base-url: http://localhost:8082
+  sqs:
+    queue-url: http://localhost:9324/000000000000/seatlock-events
   expiry:
     batch-size: 500
     max-retries: 3

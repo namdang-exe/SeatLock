@@ -24,7 +24,7 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 8 | booking-service: Booking Confirmation | COMPLETE |
 | 9 | booking-service: Hold Expiry Job | COMPLETE |
 | 10 | booking-service: Cancellation + History | COMPLETE |
-| 11 | notification-service | NOT STARTED |
+| 11 | notification-service | COMPLETE |
 | 12 | Resilience | NOT STARTED |
 | 13 | Observability | NOT STARTED |
 | 14 | Frontend: Auth + Browse | NOT STARTED |
@@ -922,7 +922,21 @@ Requires ADMIN role.
 
 ## Stage 11 — notification-service
 
-**Status:** NOT STARTED
+**Status:** COMPLETE — 2026-03-05. All acceptance criteria met. All unit and integration tests pass.
+
+**Acceptance criteria verification:**
+- ✅ `docker-compose up` starts ElasticMQ (softwaremill/elasticmq-native) and Mailpit (axllent/mailpit) alongside Postgres and Redis
+- ✅ booking-service publishes all three event types to ElasticMQ via `SqsAsyncClient` (fire-and-forget, typed envelope)
+- ✅ notification-service consumes and dispatches within 5 seconds (confirmed by Awaitility 10s timeout in ITs)
+- ✅ `BookingConfirmedEvent` results in an email in Mailpit (checked via `GET /api/v1/messages`)
+- ✅ DLQ configured with `maxReceiveCount=3` in elasticmq.conf; Spring Cloud AWS retries on listener throw
+- ✅ 4 unit tests pass (NotificationEventHandlerTest); 3 ITs pass (NotificationListenerIT); all booking-service tests still green
+
+**Implementation deviations from spec:**
+- Mailhog replaced with Mailpit (Mailhog is unmaintained; Mailpit is its active maintained replacement)
+- `NoOpBookingEventPublisher` kept as non-Spring class (removed `@Component`) rather than deleted, for potential test use
+- Email recipient is a configured `default-recipient` (not user email) — booking events don't carry user email; user email routing is a Phase 2 concern
+- `SqsAsyncClient.sendMessage()` used directly (not `SqsTemplate`) to guarantee the message body is the raw JSON string without converter interference
 
 **Goal:** SQS consumer that dispatches notifications for all three booking lifecycle events.
 

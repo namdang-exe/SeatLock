@@ -1,3 +1,7 @@
+seatlock:
+  notifications:
+    default-recipient: test@seatlock.local
+
 logging:
   level:
     com.seatlock: DEBUG

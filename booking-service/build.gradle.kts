@@ -14,9 +14,16 @@ tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }
 
+dependencyManagement {
+    imports {
+        mavenBom("io.awspring.cloud:spring-cloud-aws-dependencies:3.2.1")
+    }
+}
+
 dependencies {
     implementation(project(":common"))
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("io.awspring.cloud:spring-cloud-aws-starter-sqs")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-redis")

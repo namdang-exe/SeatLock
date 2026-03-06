@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–10 complete, Stage 11 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–11 complete, Stage 12 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -135,6 +135,16 @@
 - We chose **raw `@Column(name = "venue_id") UUID` on Slot** (no `@ManyToOne` relationship) because the service never navigates from Slot to Venue at runtime; the raw UUID avoids unnecessary lazy-load configuration.
 - We chose **GET endpoints fully public** (no Bearer token required) for venue-service browse endpoints (`GET /venues`, `GET /venues/{id}/slots`) because "browse before login" is natural product behaviour and avoids coupling the browsing experience to auth availability.
 - We confirmed **status filter applied in service/app layer** (not SQL) on the slot query so the full slot list can be stored as a single Redis cache key in Stage 5 and any status-filtered variant can be served from it without a separate cache entry.
+
+### Implementation Decisions (Phase 1 — Stage 11)
+
+- We chose **`SqsAsyncClient.sendMessage().whenComplete()`** over `SqsTemplate.send()` in `SqsBookingEventPublisher` because `SqsTemplate.send()` is blocking and serializes through a message converter that may wrap a pre-serialized JSON string. Using `SqsAsyncClient` directly guarantees the raw JSON string body is sent exactly as-is, with no additional serialization, and doesn't block the request thread (fire-and-forget per ADR-005).
+- We chose a **typed envelope `{"type": "BookingConfirmed", "payload": {...}}`** over separate SQS queues per event type because a single queue is simpler to operate and monitor; the envelope type discriminator lets the consumer dispatch without additional SQS infrastructure.
+- We chose **`io.awspring.cloud:spring-cloud-aws-starter-sqs:3.2.1`** (awspring) as the SQS integration library because it provides `@SqsListener` for message consumption and auto-configures `SqsAsyncClient` in the Spring Boot application context with minimal boilerplate.
+- We chose **`axllent/mailpit`** over `mailhog/mailhog` as the local SMTP catcher in Docker Compose because Mailhog is abandoned and unmaintained; Mailpit is its actively maintained replacement with a compatible port layout and REST API.
+- We chose **mirror event records in `notification-service`** (e.g., `com.seatlock.notification.event.BookingConfirmedEvent`) over moving the event records to the `common` module because notification-service only cares about the JSON shape for deserialization — it does not need Java type identity with the producer. Mirror records keep notification-service self-contained and avoid coupling `common` to event schemas.
+- We chose **a configured `seatlock.notifications.default-recipient`** as the email `To:` address rather than adding `userEmail` to event records because booking events only carry `userId` (UUID) and booking-service has no in-process access to the user's email address (it lives in user-service). Adding `userEmail` would require calling user-service from the expiry job or changing the JWT claim set — both out of scope for Stage 11. User email routing is a Phase 2 concern.
+- We chose **`@SqsListener` with a `String` method parameter** for `NotificationEventHandler.handle()` so the raw SQS message body (the JSON envelope string) is passed directly without converter interference; the handler performs its own `objectMapper.readValue()` to parse the envelope and dispatch.
 
 ### Implementation Decisions (Phase 1 — Stage 9)
 

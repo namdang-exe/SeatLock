@@ -5,6 +5,53 @@
 
 ---
 
+## Session 2026-03-05 — Stage 11: notification-service SQS Listener + Email
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 11 (first NOT STARTED stage)
+**Ended at:** Stage 11 COMPLETE. Stage 12 is next.
+
+### What Was Accomplished
+
+**Stage 11 fully implemented** — notification-service SQS consumer with email dispatch, all tests green:
+
+**Infrastructure additions:**
+- `infra/elasticmq/elasticmq.conf` — ElasticMQ queue config with DLQ redrive (`maxReceiveCount=3`, 30s visibility timeout)
+- `docker-compose.yml` — replaced `mailhog/mailhog` with `axllent/mailpit:latest`; added elasticmq.conf volume mount
+
+**booking-service changes (SQS publish):**
+- `SqsBookingEventPublisher` — real SQS publisher using `SqsAsyncClient.sendMessage().whenComplete()` (fire-and-forget, ADR-005)
+- `NoOpBookingEventPublisher` — removed `@Component`; kept as non-Spring class for tests
+- `application.yml` / `application-test.yml` — merged `spring.cloud.aws.*` config into single root `spring:` block
+
+**notification-service (new service, all files from scratch):**
+- Event records: `EventEnvelope`, `BookingConfirmedEvent`, `BookingCancelledEvent`, `HoldExpiredEvent`
+- `NotificationEventHandler` — `@SqsListener("${seatlock.notifications.queue-name}")`, typed dispatch via switch on `envelope.type()`
+- `EmailService` — `JavaMailSender` sends to configured `default-recipient`; re-throws on failure (enables DLQ retry)
+- `SmsService` — console-log stub (Twilio deferred to Stage 16)
+- Integration tests: `NotificationListenerIT` — 3 ITs with ElasticMQ + Mailpit Testcontainers; Awaitility polling against Mailpit REST API
+- Unit tests: `NotificationEventHandlerTest` — 4 Mockito unit tests
+
+### Key Design Decisions
+
+- **`SqsAsyncClient` over `SqsTemplate`** — fire-and-forget with raw JSON body; `SqsTemplate` wraps in SNS envelope
+- **Typed envelope format** — `{"type": "BookingConfirmed", "payload": {...}}` with `EventEnvelope(String type, JsonNode payload)`
+- **ElasticMQ native** (`softwaremill/elasticmq-native`) for Testcontainers — DLQ configured in `elasticmq.conf`
+- **Mailpit** (`axllent/mailpit`) — replaces Mailhog (abandoned); same ports 1025/8025
+- **Mirror event records** — notification-service defines its own copies for JSON deserialization independence
+- **Configured `default-recipient`** — user email not in events (userId only); user email routing deferred to Phase 2
+
+### Bugs Fixed This Session
+
+- **Duplicate `spring:` YAML root key** — SnakeYAML last-key-wins silently dropped datasource/jpa/redis config; fixed by full file rewrite with single root key (see BUGS.md)
+- **`AbstractIntegrationTest` package-private** — subpackage IT class couldn't extend it; fixed by adding `public` modifier
+
+### Where to Continue
+
+**Stage 12** — venue-service slot generation job or next NOT STARTED stage in CODING_PLAN.md.
+
+---
+
 ## Session 2026-03-04 — Stage 10: Cancellation + History
 
 **Phase:** 1 — Foundation

@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–10 complete, Stage 11 next |
-| Current implementation stage | Stage 11 — notification-service |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–11 complete, Stage 12 next |
+| Current implementation stage | Stage 12 — Resilience |
 
 ---
 

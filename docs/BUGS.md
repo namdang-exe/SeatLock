@@ -4,6 +4,56 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-05] AbstractIntegrationTest package-private — subpackage test cannot access it
+
+**Stage:** 11 (notification-service: SQS Listener + Email)
+
+**Symptom:**
+`NotificationListenerIT` (in package `com.seatlock.notification.handler`) failed to compile:
+```
+AbstractIntegrationTest is not public in com.seatlock.notification; cannot be accessed from outside package
+cannot find symbol: variable MAILPIT
+cannot find symbol: variable ELASTICMQ
+```
+
+**Root cause:**
+`AbstractIntegrationTest` was declared without an access modifier (`abstract class AbstractIntegrationTest`), making it package-private to `com.seatlock.notification`. Java prohibits subclasses in different packages from extending package-private classes.
+
+**Fix:**
+Add `public` to the class declaration:
+```java
+public abstract class AbstractIntegrationTest { ... }
+```
+
+**Files changed:**
+- `notification-service/src/integrationTest/java/com/seatlock/notification/AbstractIntegrationTest.java`
+
+**Pattern:** Always declare `AbstractIntegrationTest` base classes `public` when IT subclasses may live in subpackages.
+
+---
+
+## [2026-03-05] Duplicate `spring:` root key in YAML — SnakeYAML last-key-wins silently drops config
+
+**Stage:** 11 (notification-service: SQS Listener + Email) — also affected Stage 7 booking-service edits
+
+**Symptom:**
+After adding `spring.cloud.aws.*` config to `application.yml` and `application-test.yml`, `booking-service` failed to start because `spring.datasource`, `spring.jpa`, `spring.flyway`, `spring.data.redis`, and `spring.jackson` properties were missing.
+
+**Root cause:**
+The Edit tool prepended a new `spring:` YAML block at the top of the file instead of merging into the existing `spring:` block. SnakeYAML's behavior when duplicate root keys exist: **the last key wins** — the second `spring:` block overwrites the first entirely. All database/cache/JSON config was silently discarded.
+
+**Fix:**
+Rewrite both YAML files completely with a single unified `spring:` root key that contains all nested properties.
+
+**Files changed:**
+- `booking-service/src/main/resources/application.yml` (full rewrite)
+- `booking-service/src/test/resources/application-test.yml` (full rewrite)
+
+**Rule going forward:**
+When adding config to any `application.yml`, always read the full file first and ensure there is exactly one instance of each root key. Never prepend a new top-level block that already exists in the file.
+
+---
+
 ## [2026-03-04] HoldControllerIT fails with DataIntegrityViolationException after Stage 10
 
 **Stage:** 10 (booking-service: Cancellation + History)

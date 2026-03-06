@@ -4,9 +4,33 @@ server:
 spring:
   application:
     name: notification-service
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  mail:
+    host: localhost
+    port: 1025
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+  cloud:
+    aws:
+      region:
+        static: us-east-1
+      credentials:
+        access-key: local-access-key
+        secret-key: local-secret-key
+      sqs:
+        endpoint: http://localhost:9324
 
 management:
   endpoints:
     web:
       exposure:
         include: health
+
+seatlock:
+  notifications:
+    queue-name: seatlock-events
+    from-address: noreply@seatlock.local
+    default-recipient: notifications@seatlock.local
