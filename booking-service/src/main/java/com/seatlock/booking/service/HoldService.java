@@ -6,8 +6,10 @@ import com.seatlock.booking.domain.Hold;
 import com.seatlock.booking.domain.HoldStatus;
 import com.seatlock.booking.dto.HoldResponse;
 import com.seatlock.booking.dto.HoldResponse.HoldItemResponse;
+import com.seatlock.booking.exception.RedisUnavailableException;
 import com.seatlock.booking.exception.SlotNotAvailableException;
 import com.seatlock.booking.redis.HoldPayload;
+import org.springframework.dao.DataAccessException;
 import com.seatlock.booking.redis.RedisHoldRepository;
 import com.seatlock.booking.repository.HoldRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -76,14 +78,20 @@ public class HoldService {
         List<UUID> setSlotIds = new ArrayList<>();
         List<UUID> unavailableSlotIds = new ArrayList<>();
 
-        for (Hold hold : holds) {
-            HoldPayload payload = new HoldPayload(hold.getHoldId(), userId, sessionId, expiresAt);
-            boolean acquired = redisHoldRepository.setnx(hold.getSlotId(), payload);
-            if (acquired) {
-                setSlotIds.add(hold.getSlotId());
-            } else {
-                unavailableSlotIds.add(hold.getSlotId());
+        try {
+            for (Hold hold : holds) {
+                HoldPayload payload = new HoldPayload(hold.getHoldId(), userId, sessionId, expiresAt);
+                boolean acquired = redisHoldRepository.setnx(hold.getSlotId(), payload);
+                if (acquired) {
+                    setSlotIds.add(hold.getSlotId());
+                } else {
+                    unavailableSlotIds.add(hold.getSlotId());
+                }
             }
+        } catch (DataAccessException e) {
+            // Redis is unreachable (after retries). Clean up any keys already set.
+            setSlotIds.forEach(redisHoldRepository::del);
+            throw new RedisUnavailableException(e);
         }
 
         if (!unavailableSlotIds.isEmpty()) {

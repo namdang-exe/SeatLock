@@ -1,6 +1,9 @@
 package com.seatlock.booking.client;
 
 import com.seatlock.booking.exception.SlotNotFoundException;
+import com.seatlock.booking.exception.VenueServiceUnavailableException;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -18,6 +21,8 @@ public class SlotVerificationClient {
         this.venueServiceClient = venueServiceClient;
     }
 
+    @CircuitBreaker(name = "venue-service", fallbackMethod = "verifyFallback")
+    @Retry(name = "venue-http")
     public List<InternalSlotResponse> verify(List<UUID> slotIds) {
         String ids = slotIds.stream()
                 .map(UUID::toString)
@@ -29,5 +34,15 @@ public class SlotVerificationClient {
                 .onStatus(status -> status.value() == 404,
                         (req, resp) -> { throw new SlotNotFoundException(); })
                 .body(new ParameterizedTypeReference<>() {});
+    }
+
+    // Fallback: called when circuit is open or all retries are exhausted.
+    // SlotNotFoundException is a business error, not a transient fault — rethrow it directly.
+    private List<InternalSlotResponse> verifyFallback(List<UUID> slotIds, SlotNotFoundException e) {
+        throw e;
+    }
+
+    private List<InternalSlotResponse> verifyFallback(List<UUID> slotIds, Exception e) {
+        throw new VenueServiceUnavailableException(e);
     }
 }

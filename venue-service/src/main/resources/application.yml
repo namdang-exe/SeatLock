@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: venue-service
+  cloud:
+    vault:
+      enabled: false
+    compatibility-verifier:
+      enabled: false
   data:
     redis:
       host: localhost

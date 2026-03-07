@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–11 complete, Stage 12 next |
-| Current implementation stage | Stage 12 — Resilience |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–12 complete, Stage 13 next |
+| Current implementation stage | Stage 13 — Observability |
 
 ---
 
@@ -274,8 +274,8 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 8 | booking-service: Booking Confirmation | POST /bookings — crash-safe order, idempotency, confirmationNumber | COMPLETE |
 | 9 | booking-service: Hold Expiry Job | @Scheduled 60s, SKIP LOCKED, retry + batch halving | COMPLETE |
 | 10 | booking-service: Cancellation + History | POST cancel, GET history, admin view, stale key cleanup | COMPLETE |
-| 11 | notification-service | SQS consumer, email/SMS dispatch, ElasticMQ in Docker Compose | NOT STARTED |
-| 12 | Resilience | Redis 503 degraded mode, Vault fail-fast, circuit breaker, retries | NOT STARTED |
+| 11 | notification-service | SQS consumer, email/SMS dispatch, ElasticMQ in Docker Compose | COMPLETE |
+| 12 | Resilience | Redis 503 degraded mode, Vault fail-fast, circuit breaker, retries | COMPLETE |
 | 13 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | NOT STARTED |
 | 14 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | NOT STARTED |
 | 15 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | NOT STARTED |
@@ -316,6 +316,26 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | `booking-service/src/test/resources/application-test.yml` | Added test expiry overrides: `initial-delay-ms: 3600000`, `interval-ms: 3600000`, `retry-backoff-base-ms: 0` |
 | `booking-service/src/test/java/com/seatlock/booking/service/HoldExpiryJobTest.java` | 5 unit tests: no holds, happy path (event grouped by session), multi-hold same session, retry once, max retries + batch halving |
 | `booking-service/src/integrationTest/java/com/seatlock/booking/service/HoldExpiryJobIT.java` | 3 ITs: expired hold → EXPIRED + slot AVAILABLE; non-expired → untouched; 10-hold concurrent SKIP LOCKED |
+
+### Stage 12 — Resilience
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Added `vault` (hashicorp/vault:1.15 dev mode) + `vault-init` (seeds secrets on startup) |
+| `infra/vault/seed.sh` | Seeds `secret/seatlock` KV path: jwt.secret, service-jwt.secret, db.password |
+| `*/src/main/resources/application.yml` (all 4) | Added `spring.cloud.vault.enabled: false` + `compatibility-verifier.enabled: false` (local/default mode) |
+| `*/src/main/resources/application-vault.yml` (all 4) | New: activates Vault when `vault` profile active; `spring.cloud.vault.enabled: true` + `spring.config.import: vault://` |
+| `*/build.gradle.kts` (all 4) | Added `spring-cloud-dependencies:2024.0.1` BOM + `spring-cloud-starter-vault-config` |
+| `booking-service/build.gradle.kts` | Also added `spring-boot-starter-aop` + `resilience4j-spring-boot3:2.2.0` |
+| `booking-service/src/main/resources/application.yml` | Added Resilience4j circuit breaker + retry config |
+| `booking-service/src/test/resources/application-test.yml` | Added low-threshold Resilience4j config for tests |
+| `booking-service/.../redis/RedisHoldRepository.java` | `setnx()`: removed DataAccessException catch; added `@Retry(name = "redis-ops")` |
+| `booking-service/.../service/HoldService.java` | SETNX loop wrapped in `catch(DataAccessException)` → cleanup acquired keys → `RedisUnavailableException` |
+| `booking-service/.../exception/VenueServiceUnavailableException.java` | New: → 503 SERVICE_UNAVAILABLE |
+| `booking-service/.../client/SlotVerificationClient.java` | Added `@CircuitBreaker(name = "venue-service", fallbackMethod)` + `@Retry(name = "venue-http")`; fallback throws `VenueServiceUnavailableException` |
+| `booking-service/.../exception/GlobalExceptionHandler.java` | Added `VenueServiceUnavailableException` → 503 handler |
+| `booking-service/.../service/HoldServiceTest.java` | Added: Redis connection failure → RedisUnavailableException + cleanup test |
+| `booking-service/.../controller/HoldControllerIT.java` | Added: circuit breaker fallback → 503 test |
 
 ---
 

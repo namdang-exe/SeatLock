@@ -16,6 +16,7 @@ tasks.withType<Test>().configureEach {
 
 dependencyManagement {
     imports {
+        mavenBom("org.springframework.cloud:spring-cloud-dependencies:2024.0.1")
         mavenBom("io.awspring.cloud:spring-cloud-aws-dependencies:3.2.1")
     }
 }
@@ -23,6 +24,7 @@ dependencyManagement {
 dependencies {
     implementation(project(":common"))
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.cloud:spring-cloud-starter-vault-config")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-mail")
     implementation("io.awspring.cloud:spring-cloud-aws-starter-sqs")

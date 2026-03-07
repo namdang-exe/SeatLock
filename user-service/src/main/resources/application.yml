@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: user-service
+  cloud:
+    vault:
+      enabled: false
+    compatibility-verifier:
+      enabled: false
   datasource:
     url: jdbc:postgresql://localhost:5432/user_db
     username: seatlock

@@ -5,6 +5,87 @@
 
 ---
 
+## Session 2026-03-06 — Stage 12: Resilience + Vault
+
+**Phase:** 1 — Foundation
+**Started at:** Stage 12 (first NOT STARTED stage)
+**Ended at:** Stage 12 COMPLETE. Stage 13 is next.
+
+### What Was Accomplished
+
+**Stage 12 fully implemented** — Redis 503 degraded mode, Resilience4j circuit breaker + retry on booking→venue path, Spring Cloud Vault two-mode config across all four services. All tests green.
+
+**Infrastructure additions:**
+- `docker-compose.yml` — added `vault` (hashicorp/vault:1.15 dev mode, port 8200) and `vault-init` (sidecar that seeds secrets on startup)
+- `infra/vault/seed.sh` (new) — seeds `secret/seatlock` KV path with JWT secrets and DB password
+
+**Dependencies added (all 4 services):**
+- Spring Cloud BOM `2024.0.1` (Moorgate) via `dependencyManagement`
+- `spring-cloud-starter-vault-config`
+
+**booking-service additionally:**
+- `spring-boot-starter-aop`
+- `resilience4j-spring-boot3:2.2.0`
+
+**Config changes:**
+- All 4 `application.yml` — merged `spring.cloud.vault.enabled: false` + `spring.cloud.compatibility-verifier.enabled: false` into `spring.cloud:` block
+- All 4 `application-vault.yml` (new) — vault profile: `enabled: true`, `spring.config.import: "vault://"`, health details always shown
+- `booking-service/src/main/resources/application.yml` — added Resilience4j `circuitbreaker.instances.venue-service` and `retry.instances.redis-ops` + `retry.instances.venue-http`
+- `booking-service/src/test/resources/application-test.yml` — added low-threshold Resilience4j config for fast tests (maxAttempts: 1, waitDuration: 0ms)
+
+**booking-service implementation:**
+- `VenueServiceUnavailableException` (new) — thrown by circuit breaker fallback → 503
+- `RedisHoldRepository.setnx()` — removed internal `DataAccessException` catch; added `@Retry(name = "redis-ops")`
+- `HoldService.createHold()` — moved `DataAccessException` catch to SETNX loop; cleans up acquired Redis keys before throwing `RedisUnavailableException`
+- `SlotVerificationClient.verify()` — added `@CircuitBreaker(name = "venue-service")` + `@Retry(name = "venue-http")`; two fallback overloads: `SlotNotFoundException` (rethrow) and `Exception` (→ `VenueServiceUnavailableException`)
+- `GlobalExceptionHandler` — added `VenueServiceUnavailableException` → 503 handler
+
+**Tests added:**
+- `HoldServiceTest.redisConnectionFailure_duringHoldCreation_throwsRedisUnavailableAndCleansUpAcquiredKeys`
+- `HoldControllerIT.venueServiceUnavailable_circuitBreakerFallback_returns503`
+
+### Key Decisions Made
+
+- Spring Cloud BOM `2024.0.1` (not `2025.0.0`) — 2025.0.0 CompatibilityVerifier rejects Spring Boot 3.5.0
+- `application-vault.yml` profile approach (not `bootstrap.yml`) — Spring Boot 3.x modern config import
+- `spring.cloud.vault.enabled: false` in default YAML — required because Vault auto-configures unconditionally on classpath
+- `@Retry` on `setnx()` with catch moved to `HoldService` — Resilience4j AOP needs exception to propagate out of annotated method
+- Two `verifyFallback` overloads — `SlotNotFoundException` is a business error (rethrow), all others → 503
+
+### Bugs Found and Fixed
+
+1. **Spring Cloud BOM 2025.0.0 CompatibilityVerifier rejects Spring Boot 3.5.0** — fixed by downgrading to 2024.0.1 and disabling verifier
+2. **Spring Cloud Vault auto-configures even without vault profile** — fixed by `spring.cloud.vault.enabled: false` in default YAML
+3. **YAML duplicate `spring:` root key** (pre-existing pattern) — merged all `spring.cloud.*` into single block in booking-service and notification-service
+
+### Files Modified
+
+- `docker-compose.yml`
+- `infra/vault/seed.sh` (new)
+- All 4 `build.gradle.kts` — Spring Cloud BOM + vault dependency
+- All 4 `application.yml` — spring.cloud.vault.enabled + compatibility-verifier
+- All 4 `application-vault.yml` (new)
+- `booking-service/src/main/resources/application.yml` — Resilience4j config
+- `booking-service/src/test/resources/application-test.yml` — test Resilience4j config
+- `booking-service/…/exception/VenueServiceUnavailableException.java` (new)
+- `booking-service/…/redis/RedisHoldRepository.java` — @Retry added
+- `booking-service/…/service/HoldService.java` — DataAccessException catch moved
+- `booking-service/…/client/SlotVerificationClient.java` — circuit breaker + retry + fallbacks
+- `booking-service/…/exception/GlobalExceptionHandler.java` — 503 handler
+- `booking-service/…/service/HoldServiceTest.java` — Redis failure test
+- `booking-service/…/controller/HoldControllerIT.java` — circuit breaker IT
+- `docs/CODING_PLAN.md` — Stage 12 COMPLETE
+- `docs/INDEX.md` — Stage 12 COMPLETE, Stage 13 current
+- `docs/CONTEXT.md` — Stage 12 implementation decisions added
+- `docs/BUGS.md` — two Stage 12 bugs documented
+- `memory/MEMORY.md` — stage count updated
+
+### Continue Next Session From
+
+Stage 13 — first NOT STARTED stage in `docs/CODING_PLAN.md`. Feed CONTEXT.md + INDEX.md + CODING_PLAN.md + open-questions.md at session start as usual.
+
+---
+
 ## Session 2026-03-05 — Stage 11: notification-service SQS Listener + Email
 
 **Phase:** 1 — Foundation

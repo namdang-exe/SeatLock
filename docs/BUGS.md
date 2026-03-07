@@ -4,6 +4,57 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-06] Spring Cloud BOM 2025.0.0 rejects Spring Boot 3.5.0 — CompatibilityVerifier failure
+
+**Stage:** 12 (Resilience + Vault)
+
+**Symptom:**
+All integration tests fail at context load with:
+```
+Spring Boot [3.5.0] is not compatible with this Spring Cloud release train.
+Change Spring Boot version to one of the following versions [3.2.x, 3.3.x]
+```
+
+**Root cause:**
+`spring-cloud-dependencies:2025.0.0` resolves successfully and its Vault starter compiles. However, `CompatibilityVerifierAutoConfiguration` (which runs unconditionally) only whitelists Spring Boot 3.2.x and 3.3.x — it hard-rejects 3.5.0 at startup.
+
+**Fix:**
+Downgrade BOM to `2024.0.1` (Moorgate release train — supports Spring Boot 3.3.x) and add `spring.cloud.compatibility-verifier.enabled: false` to all four `application.yml` files to suppress the version warning at runtime.
+
+**Files changed:**
+- `user-service/build.gradle.kts`, `venue-service/build.gradle.kts`, `booking-service/build.gradle.kts`, `notification-service/build.gradle.kts` — BOM version `2025.0.0` → `2024.0.1`
+- All four `application.yml` files — added `spring.cloud.compatibility-verifier.enabled: false`
+
+**Rule going forward:**
+When adding Spring Cloud dependencies to a Spring Boot 3.5.x project, use BOM `2024.0.1` and always add `spring.cloud.compatibility-verifier.enabled: false`.
+
+---
+
+## [2026-03-06] Spring Cloud Vault auto-configures even without vault profile active
+
+**Stage:** 12 (Resilience + Vault)
+
+**Symptom:**
+After adding `spring-cloud-starter-vault-config` to all four services' build files, all 23 integration tests fail with:
+```
+java.lang.IllegalStateException at ClientAuthenticationFactory.java:438
+```
+Vault token auth fails because Vault is not running in the test environment.
+
+**Root cause:**
+Spring Cloud Vault registers auto-configuration beans unconditionally when the JAR is on the classpath — it does not check the active profile. Even with no `vault` profile active, the `VaultAutoConfiguration` runs and attempts to authenticate with a Vault server.
+
+**Fix:**
+Add `spring.cloud.vault.enabled: false` to all four services' `application.yml` (the default). The `application-vault.yml` profile file sets `spring.cloud.vault.enabled: true`. Now Vault is active only when the `vault` Spring profile is explicitly activated.
+
+**Files changed:**
+- All four `application.yml` files — merged `spring.cloud.vault.enabled: false` into existing `spring.cloud:` block
+
+**Rule going forward:**
+Whenever adding spring-cloud-starter-vault-config to a service, immediately add `spring.cloud.vault.enabled: false` to the default `application.yml`.
+
+---
+
 ## [2026-03-05] AbstractIntegrationTest package-private — subpackage test cannot access it
 
 **Stage:** 11 (notification-service: SQS Listener + Email)

@@ -40,6 +40,12 @@ public class GlobalExceptionHandler {
                 "Hold service temporarily unavailable. Please try again.");
     }
 
+    @ExceptionHandler(VenueServiceUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleVenueServiceUnavailable(VenueServiceUnavailableException ex) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
+                "Hold service temporarily unavailable. Please try again.");
+    }
+
     @ExceptionHandler(SessionNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleSessionNotFound(SessionNotFoundException ex) {
         return error(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", ex.getMessage());

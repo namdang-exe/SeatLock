@@ -2,8 +2,7 @@ package com.seatlock.booking.redis;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.seatlock.booking.exception.RedisUnavailableException;
-import org.springframework.dao.DataAccessException;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -29,8 +28,9 @@ public class RedisHoldRepository {
      * Atomically set hold:{slotId} if absent (Redis SETNX with TTL).
      *
      * @return true if the key was set (hold acquired), false if the key already existed
-     * @throws RedisUnavailableException if Redis is unreachable
+     * @throws org.springframework.dao.DataAccessException if Redis is unreachable (retried by Resilience4j)
      */
+    @Retry(name = "redis-ops")
     public boolean setnx(UUID slotId, HoldPayload payload) {
         String key = HOLD_KEY_PREFIX + slotId;
         String value;
@@ -39,12 +39,8 @@ public class RedisHoldRepository {
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize hold payload", e);
         }
-        try {
-            Boolean result = redisTemplate.opsForValue().setIfAbsent(key, value, HOLD_TTL);
-            return Boolean.TRUE.equals(result);
-        } catch (DataAccessException e) {
-            throw new RedisUnavailableException(e);
-        }
+        Boolean result = redisTemplate.opsForValue().setIfAbsent(key, value, HOLD_TTL);
+        return Boolean.TRUE.equals(result);
     }
 
     /**

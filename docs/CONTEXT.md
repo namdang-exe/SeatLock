@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–11 complete, Stage 12 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–12 complete, Stage 13 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -145,6 +145,16 @@
 - We chose **mirror event records in `notification-service`** (e.g., `com.seatlock.notification.event.BookingConfirmedEvent`) over moving the event records to the `common` module because notification-service only cares about the JSON shape for deserialization — it does not need Java type identity with the producer. Mirror records keep notification-service self-contained and avoid coupling `common` to event schemas.
 - We chose **a configured `seatlock.notifications.default-recipient`** as the email `To:` address rather than adding `userEmail` to event records because booking events only carry `userId` (UUID) and booking-service has no in-process access to the user's email address (it lives in user-service). Adding `userEmail` would require calling user-service from the expiry job or changing the JWT claim set — both out of scope for Stage 11. User email routing is a Phase 2 concern.
 - We chose **`@SqsListener` with a `String` method parameter** for `NotificationEventHandler.handle()` so the raw SQS message body (the JSON envelope string) is passed directly without converter interference; the handler performs its own `objectMapper.readValue()` to parse the envelope and dispatch.
+
+### Implementation Decisions (Phase 1 — Stage 12)
+
+- We chose **Spring Cloud BOM `2024.0.1` (Moorgate)** over `2025.0.0` because `2025.0.0` resolves successfully but its `CompatibilityVerifierAutoConfiguration` only permits Spring Boot 3.2.x and 3.3.x — it rejects Spring Boot 3.5.0 at startup. `2024.0.1` supports Spring Boot 3.3.x and passes compatibility checks when paired with `spring.cloud.compatibility-verifier.enabled: false`.
+- We chose **`spring.cloud.compatibility-verifier.enabled: false`** in all four `application.yml` files to suppress the BOM/Boot version mismatch warning at runtime. The actual Spring Cloud Vault features work correctly with Spring Boot 3.5.0; the verifier is a canary check, not a hard runtime requirement.
+- We chose **`spring.cloud.vault.enabled: false` in default `application.yml`** (not relying on the `vault` profile being absent) because Spring Cloud Vault registers auto-configuration beans at startup regardless of active profiles when it is on the classpath. Without explicit `enabled: false`, all ITs fail with `ClientAuthenticationFactory IllegalStateException`. The `application-vault.yml` profile overrides to `enabled: true`.
+- We chose **`application-vault.yml` with `spring.config.import: "vault://"` and `spring.cloud.vault.enabled: true`** over `bootstrap.yml` because Spring Boot 3.x deprecated the bootstrap phase; the `spring.config.import` mechanism is the modern replacement and integrates with the standard environment post-processing lifecycle.
+- We chose **`@Retry(name = "redis-ops")` on `RedisHoldRepository.setnx()`** with the `DataAccessException` catch moved up to `HoldService`'s SETNX loop (not the repository). Resilience4j AOP intercepts exceptions only after they propagate out of the annotated method — catching them internally prevents the retry. Moving the catch to `HoldService` also enables cleanup of already-acquired Redis keys before rethrowing `RedisUnavailableException`.
+- We chose **two overloaded `verifyFallback` methods on `SlotVerificationClient`** — one specifically typed `SlotNotFoundException` (rethrows the exception, as it is a business-domain error, not a transient fault) and one generic `Exception` (converts to `VenueServiceUnavailableException` → 503). Resilience4j selects the most-specific overload, so `SlotNotFoundException` bypasses the circuit-breaker fallback path and surfaces directly as a 404.
+- We chose **Vault dev mode (`VAULT_DEV_ROOT_TOKEN_ID: root`)** with a `vault-init` sidecar container in Docker Compose to seed `secret/seatlock` with the KV secrets. Dev mode stores secrets in memory only (no persistence), which is sufficient for the local dev stack and removes the complexity of Vault initialization, unsealing, and auth method setup.
 
 ### Implementation Decisions (Phase 1 — Stage 9)
 

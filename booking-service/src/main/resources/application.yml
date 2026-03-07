@@ -4,6 +4,19 @@ server:
 spring:
   application:
     name: booking-service
+  cloud:
+    vault:
+      enabled: false
+    compatibility-verifier:
+      enabled: false
+    aws:
+      region:
+        static: us-east-1
+      credentials:
+        access-key: local-access-key
+        secret-key: local-secret-key
+      sqs:
+        endpoint: http://localhost:9324
   datasource:
     url: jdbc:postgresql://localhost:5432/booking_db
     username: seatlock
@@ -22,15 +35,6 @@ spring:
   jackson:
     serialization:
       write-dates-as-timestamps: false
-  cloud:
-    aws:
-      region:
-        static: us-east-1
-      credentials:
-        access-key: local-access-key
-        secret-key: local-secret-key
-      sqs:
-        endpoint: http://localhost:9324
 
 management:
   endpoints:
@@ -56,3 +60,25 @@ seatlock:
     retry-backoff-base-ms: 500
     interval-ms: 60000
     initial-delay-ms: 10000
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      venue-service:
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+  retry:
+    instances:
+      redis-ops:
+        maxAttempts: 3
+        waitDuration: 100ms
+        retryExceptions:
+          - org.springframework.dao.DataAccessException
+      venue-http:
+        maxAttempts: 2
+        waitDuration: 200ms
+        retryExceptions:
+          - org.springframework.web.client.ResourceAccessException

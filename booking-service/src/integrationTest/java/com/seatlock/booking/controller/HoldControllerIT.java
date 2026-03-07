@@ -3,6 +3,7 @@ package com.seatlock.booking.controller;
 import com.seatlock.booking.AbstractIntegrationTest;
 import com.seatlock.booking.client.InternalSlotResponse;
 import com.seatlock.booking.client.SlotVerificationClient;
+import com.seatlock.booking.exception.VenueServiceUnavailableException;
 import com.seatlock.booking.dto.HoldResponse;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -177,6 +178,21 @@ class HoldControllerIT extends AbstractIntegrationTest {
         Integer holdCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM holds WHERE slot_id = ?", Integer.class, slotId);
         assertThat(holdCount).isEqualTo(1);
+    }
+
+    @Test
+    void venueServiceUnavailable_circuitBreakerFallback_returns503() {
+        // Simulate what happens when the circuit breaker opens: the fallback throws VenueServiceUnavailableException
+        when(slotVerificationClient.verify(anyList()))
+                .thenThrow(new VenueServiceUnavailableException());
+
+        ResponseEntity<Map> response = restTemplate.postForEntity(
+                "/api/v1/holds",
+                holdEntity(userId, List.of(slotId), UUID.randomUUID()),
+                Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody()).containsEntry("error", "SERVICE_UNAVAILABLE");
     }
 
     @Test

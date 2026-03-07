@@ -5,10 +5,12 @@ import com.seatlock.booking.client.SlotVerificationClient;
 import com.seatlock.booking.domain.Hold;
 import com.seatlock.booking.domain.HoldStatus;
 import com.seatlock.booking.dto.HoldResponse;
+import com.seatlock.booking.exception.RedisUnavailableException;
 import com.seatlock.booking.exception.SlotNotAvailableException;
 import com.seatlock.booking.redis.HoldPayload;
 import com.seatlock.booking.redis.RedisHoldRepository;
 import com.seatlock.booking.repository.HoldRepository;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -127,6 +129,29 @@ class HoldServiceTest {
         // Both Redis keys must be cleaned up
         verify(redisHoldRepository).del(slotId1);
         verify(redisHoldRepository).del(slotId2);
+    }
+
+    @Test
+    void redisConnectionFailure_duringHoldCreation_throwsRedisUnavailableAndCleansUpAcquiredKeys() {
+        when(holdRepository.findBySessionIdAndStatus(sessionId, HoldStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(slotVerificationClient.verify(anyList()))
+                .thenReturn(List.of(
+                        slotResponse(slotId1, venueId),
+                        slotResponse(slotId2, venueId)));
+
+        // slotId1 acquired successfully, slotId2 throws a Redis connection error
+        when(redisHoldRepository.setnx(eq(slotId1), any(HoldPayload.class))).thenReturn(true);
+        when(redisHoldRepository.setnx(eq(slotId2), any(HoldPayload.class)))
+                .thenThrow(new DataAccessResourceFailureException("Redis unavailable"));
+
+        assertThatThrownBy(() -> holdService.createHold(userId, List.of(slotId1, slotId2), sessionId))
+                .isInstanceOf(RedisUnavailableException.class);
+
+        // slotId1 was successfully SET before the failure — must be cleaned up
+        verify(redisHoldRepository).del(slotId1);
+        // slotId2 was never SET — no DEL needed
+        verify(redisHoldRepository, never()).del(slotId2);
     }
 
     @Test

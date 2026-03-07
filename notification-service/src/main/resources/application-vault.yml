@@ -1,0 +1,22 @@
+# Vault profile — active when SPRING_PROFILES_ACTIVE=vault (dev-infra / production mode).
+# Secrets are loaded from Vault and override values in application.yml.
+# If Vault is unreachable at startup the application context fails to load (fail-fast).
+spring:
+  cloud:
+    vault:
+      enabled: true
+      host: ${VAULT_HOST:localhost}
+      port: ${VAULT_PORT:8200}
+      token: ${VAULT_TOKEN:root}
+      kv:
+        enabled: true
+        backend: secret
+        default-context: seatlock
+  config:
+    import: "vault://"
+
+management:
+  endpoint:
+    health:
+      show-components: always
+      show-details: always
