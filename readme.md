@@ -134,10 +134,11 @@ cd D:/projects/SeatLock && gradlew :notification-service:bootRun  # http://local
 ### 3 — Verify everything is up
 
 ```bash
-curl http://localhost:8081/actuator/health   # {"status":"UP"}
-curl http://localhost:8082/actuator/health   # {"status":"UP"}
-curl http://localhost:8083/actuator/health   # {"status":"UP"}
-curl http://localhost:8084/actuator/health   # {"status":"UP"}
+# {"status":"UP"}
+curl http://localhost:8081/actuator/health   
+curl http://localhost:8082/actuator/health   
+curl http://localhost:8083/actuator/health   
+curl http://localhost:8084/actuator/health  
 ```
 
 ### Useful URLs

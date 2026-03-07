@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–12 complete, Stage 13 next |
-| Current implementation stage | Stage 13 — Observability |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–13 complete, Stage 14 next |
+| Current implementation stage | Stage 14 — Observability |
 
 ---
 
@@ -276,10 +276,11 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 10 | booking-service: Cancellation + History | POST cancel, GET history, admin view, stale key cleanup | COMPLETE |
 | 11 | notification-service | SQS consumer, email/SMS dispatch, ElasticMQ in Docker Compose | COMPLETE |
 | 12 | Resilience | Redis 503 degraded mode, Vault fail-fast, circuit breaker, retries | COMPLETE |
-| 13 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | NOT STARTED |
-| 14 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | NOT STARTED |
-| 15 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | NOT STARTED |
-| 16 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | NOT STARTED |
+| 13 | API Documentation (Swagger UI) | springdoc-openapi, Bearer JWT auth, interactive UI per service | COMPLETE |
+| 14 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | NOT STARTED |
+| 15 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | NOT STARTED |
+| 16 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | NOT STARTED |
+| 17 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | NOT STARTED |
 
 ### Stage 10 — booking-service: Cancellation + History
 

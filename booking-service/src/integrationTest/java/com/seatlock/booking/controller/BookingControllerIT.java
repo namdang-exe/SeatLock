@@ -6,8 +6,7 @@ import com.seatlock.booking.client.SlotVerificationClient;
 import com.seatlock.booking.dto.BookingResponse;
 import com.seatlock.booking.dto.HoldResponse;
 import com.seatlock.booking.redis.RedisHoldRepository;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import com.seatlock.common.security.Hs256JwtProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.crypto.SecretKey;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -240,13 +239,8 @@ class BookingControllerIT extends AbstractIntegrationTest {
     }
 
     private String issueToken(UUID userId) {
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        return Jwts.builder()
-                .subject("test@example.com")
-                .claim("userId", userId.toString())
-                .claim("role", "USER")
-                .expiration(Date.from(Instant.now().plus(1, ChronoUnit.HOURS)))
-                .signWith(key)
-                .compact();
+        return new Hs256JwtProvider(jwtSecret)
+                .issue(userId, "test@example.com", "USER",
+                        Instant.now().plus(1, ChronoUnit.HOURS));
     }
 }

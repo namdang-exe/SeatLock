@@ -1,40 +1,30 @@
 package com.seatlock.user.security;
 
+import com.seatlock.common.security.JwtSigner;
+import com.seatlock.common.security.JwtVerifier;
 import com.seatlock.user.domain.User;
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Date;
 
 @Service
 public class JwtService {
 
     private static final long EXPIRATION_HOURS = 24;
 
-    private final SecretKey key;
+    private final JwtSigner signer;
+    private final JwtVerifier verifier;
 
-    public JwtService(@Value("${seatlock.jwt.secret}") String secret) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    public JwtService(JwtSigner signer, JwtVerifier verifier) {
+        this.signer = signer;
+        this.verifier = verifier;
     }
 
     public String issueToken(User user) {
-        Instant now = Instant.now();
-        Instant expiry = now.plus(EXPIRATION_HOURS, ChronoUnit.HOURS);
-        return Jwts.builder()
-                .subject(user.getEmail())
-                .claim("userId", user.getUserId().toString())
-                .claim("role", user.getRole())
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(expiry))
-                .signWith(key)
-                .compact();
+        Instant expiry = Instant.now().plus(EXPIRATION_HOURS, ChronoUnit.HOURS);
+        return signer.issue(user.getUserId(), user.getEmail(), user.getRole(), expiry);
     }
 
     public Instant expiresAt() {
@@ -42,10 +32,6 @@ public class JwtService {
     }
 
     public Claims parse(String token) {
-        return Jwts.parser()
-                .verifyWith(key)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        return verifier.parseAndValidate(token);
     }
 }

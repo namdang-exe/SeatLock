@@ -10,8 +10,7 @@ import com.seatlock.booking.dto.CancelResponse;
 import com.seatlock.booking.dto.HoldResponse;
 import com.seatlock.booking.redis.RedisHoldRepository;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import com.seatlock.common.security.Hs256JwtProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -303,24 +302,14 @@ class CancellationControllerIT extends AbstractIntegrationTest {
     }
 
     private String issueUserToken(UUID userId) {
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        return Jwts.builder()
-                .subject("user@example.com")
-                .claim("userId", userId.toString())
-                .claim("role", "USER")
-                .expiration(Date.from(Instant.now().plus(1, ChronoUnit.HOURS)))
-                .signWith(key)
-                .compact();
+        return new Hs256JwtProvider(jwtSecret)
+                .issue(userId, "user@example.com", "USER",
+                        Instant.now().plus(1, ChronoUnit.HOURS));
     }
 
     private String issueAdminToken() {
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        return Jwts.builder()
-                .subject("admin@example.com")
-                .claim("userId", UUID.randomUUID().toString())
-                .claim("role", "ADMIN")
-                .expiration(Date.from(Instant.now().plus(1, ChronoUnit.HOURS)))
-                .signWith(key)
-                .compact();
+        return new Hs256JwtProvider(jwtSecret)
+                .issue(UUID.randomUUID(), "admin@example.com", "ADMIN",
+                        Instant.now().plus(1, ChronoUnit.HOURS));
     }
 }

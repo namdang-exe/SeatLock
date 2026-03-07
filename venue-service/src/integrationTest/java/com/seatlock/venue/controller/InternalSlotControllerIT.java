@@ -6,6 +6,7 @@ import com.seatlock.venue.domain.Venue;
 import com.seatlock.venue.domain.VenueStatus;
 import com.seatlock.venue.repository.SlotRepository;
 import com.seatlock.venue.repository.VenueRepository;
+import com.seatlock.common.security.Hs256JwtProvider;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
@@ -121,14 +122,7 @@ class InternalSlotControllerIT extends AbstractIntegrationTest {
     }
 
     private String buildUserJwt(String secret, String email, String role) {
-        SecretKey key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        Instant now = Instant.now();
-        return Jwts.builder()
-                .subject(email)
-                .claim("role", role)
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plus(24, ChronoUnit.HOURS)))
-                .signWith(key)
-                .compact();
+        return new Hs256JwtProvider(secret)
+                .issue(null, email, role, Instant.now().plus(24, ChronoUnit.HOURS));
     }
 }

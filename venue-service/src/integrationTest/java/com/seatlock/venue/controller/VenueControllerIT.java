@@ -6,8 +6,7 @@ import com.seatlock.venue.dto.GenerateSlotsRequest;
 import com.seatlock.venue.dto.SlotResponse;
 import com.seatlock.venue.dto.UpdateVenueStatusRequest;
 import com.seatlock.venue.dto.VenueResponse;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import com.seatlock.common.security.Hs256JwtProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,11 +18,9 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
-import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
@@ -40,14 +37,9 @@ class VenueControllerIT extends AbstractIntegrationTest {
     // --- Helpers ---
 
     private String token(String role) {
-        return Jwts.builder()
-                .subject("test@example.com")
-                .claim("userId", UUID.randomUUID().toString())
-                .claim("role", role)
-                .issuedAt(Date.from(Instant.now()))
-                .expiration(Date.from(Instant.now().plus(1, ChronoUnit.HOURS)))
-                .signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
-                .compact();
+        return new Hs256JwtProvider(jwtSecret)
+                .issue(UUID.randomUUID(), "test@example.com", role,
+                        Instant.now().plus(1, ChronoUnit.HOURS));
     }
 
     private HttpHeaders authHeaders(String role) {

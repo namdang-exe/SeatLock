@@ -1,0 +1,515 @@
+{
+  "info": {
+    "_postman_id": "seatlock-e2e-v1",
+    "name": "SeatLock E2E",
+    "description": "Full happy-path: register → login → create venue → generate slots → hold → confirm → history → cancel.\n\nPrerequisite: after Register+Login, run this SQL to set ADMIN role, then re-run Login to get a fresh token:\n  UPDATE users SET role='ADMIN' WHERE email='<your test email>';\n\nAll services must be running:\n  user-service    :8081\n  venue-service   :8082\n  booking-service :8083",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "user_url",             "value": "http://localhost:8081" },
+    { "key": "venue_url",            "value": "http://localhost:8082" },
+    { "key": "booking_url",          "value": "http://localhost:8083" },
+    { "key": "token",                "value": "" },
+    { "key": "test_email",           "value": "" },
+    { "key": "test_password",        "value": "E2ePassword123!" },
+    { "key": "venue_id",             "value": "" },
+    { "key": "slot_id",              "value": "" },
+    { "key": "slot_date",            "value": "" },
+    { "key": "from_date",            "value": "" },
+    { "key": "to_date",              "value": "" },
+    { "key": "session_id",           "value": "" },
+    { "key": "confirmation_number",  "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "1.1 Register",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Unique email per run",
+                  "const ts = Date.now();",
+                  "pm.collectionVariables.set('test_email', `e2e-${ts}@seatlock.local`);",
+                  "",
+                  "// Find first Monday >= 7 days from today (cancellation window safe)",
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 7);",
+                  "while (d.getDay() !== 1) { d.setDate(d.getDate() + 1); }",
+                  "const fmt = x => x.toISOString().split('T')[0];",
+                  "const fri = new Date(d);",
+                  "fri.setDate(d.getDate() + 4);",
+                  "pm.collectionVariables.set('slot_date', fmt(d));",
+                  "pm.collectionVariables.set('from_date', fmt(d));",
+                  "pm.collectionVariables.set('to_date',   fmt(fri));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('response has userId and email', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.userId).to.be.a('string');",
+                  "    pm.expect(b.email).to.eql(pm.collectionVariables.get('test_email'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{user_url}}/api/v1/auth/register", "host": ["{{user_url}}"], "path": ["api","v1","auth","register"] }
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Login → capture token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('response has token', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.token).to.be.a('string').and.not.empty;",
+                  "    pm.collectionVariables.set('token', b.token);",
+                  "    console.log('Token captured. JWT:', b.token.substring(0, 40) + '...');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{user_url}}/api/v1/auth/login", "host": ["{{user_url}}"], "path": ["api","v1","auth","login"] }
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 Login again as ADMIN → refresh token",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Run this AFTER setting role=ADMIN in Postgres:",
+                  "// UPDATE users SET role='ADMIN' WHERE email='{{test_email}}';"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('token', b.token);",
+                  "",
+                  "// Verify the role claim in the JWT payload",
+                  "const payload = JSON.parse(atob(b.token.split('.')[1]));",
+                  "pm.test('token contains ADMIN role', () => {",
+                  "    pm.expect(payload.role).to.eql('ADMIN');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{user_url}}/api/v1/auth/login", "host": ["{{user_url}}"], "path": ["api","v1","auth","login"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Venue Setup  [requires ADMIN token]",
+      "item": [
+        {
+          "name": "2.1 Create Venue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('response has venueId', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.venueId).to.be.a('string');",
+                  "    pm.expect(b.status).to.eql('ACTIVE');",
+                  "    pm.collectionVariables.set('venue_id', b.venueId);",
+                  "    console.log('Venue created:', b.venueId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"E2E Test Venue\",\n  \"address\": \"1 Test Street\",\n  \"city\": \"London\",\n  \"state\": \"England\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{venue_url}}/api/v1/admin/venues", "host": ["{{venue_url}}"], "path": ["api","v1","admin","venues"] }
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 Generate Slots (next Mon–Fri)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('slots generated', () => {",
+                  "    const slots = pm.response.json();",
+                  "    pm.expect(slots).to.be.an('array').that.is.not.empty;",
+                  "    console.log(`Generated ${slots.length} slots from ${pm.collectionVariables.get('from_date')} to ${pm.collectionVariables.get('to_date')}`);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromDate\": \"{{from_date}}\",\n  \"toDate\": \"{{to_date}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{venue_url}}/api/v1/admin/venues/{{venue_id}}/slots/generate",
+              "host": ["{{venue_url}}"],
+              "path": ["api","v1","admin","venues","{{venue_id}}","slots","generate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 List Slots on slot_date → capture slot_id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('AVAILABLE slots returned', () => {",
+                  "    const slots = pm.response.json();",
+                  "    pm.expect(slots).to.be.an('array').that.is.not.empty;",
+                  "    const first = slots[0];",
+                  "    pm.expect(first.status).to.eql('AVAILABLE');",
+                  "    pm.collectionVariables.set('slot_id', first.slotId);",
+                  "    console.log('Captured slot_id:', first.slotId, 'startTime:', first.startTime);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{venue_url}}/api/v1/venues/{{venue_id}}/slots?date={{slot_date}}&status=AVAILABLE",
+              "host": ["{{venue_url}}"],
+              "path": ["api","v1","venues","{{venue_id}}","slots"],
+              "query": [
+                { "key": "date",   "value": "{{slot_date}}" },
+                { "key": "status", "value": "AVAILABLE" }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Hold",
+      "item": [
+        {
+          "name": "3.1 Create Hold → capture session_id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('response has sessionId and expiresAt', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.sessionId).to.be.a('string');",
+                  "    pm.expect(b.expiresAt).to.be.a('string');",
+                  "    pm.expect(b.holds).to.be.an('array').with.lengthOf(1);",
+                  "    pm.collectionVariables.set('session_id', b.sessionId);",
+                  "    console.log('Hold created. sessionId:', b.sessionId, 'expires:', b.expiresAt);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",    "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotIds\": [\"{{slot_id}}\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{booking_url}}/api/v1/holds", "host": ["{{booking_url}}"], "path": ["api","v1","holds"] }
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Verify slot is HELD  [same JWT, venue-service]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('target slot is HELD', () => {",
+                  "    const slots  = pm.response.json();",
+                  "    const slotId = pm.collectionVariables.get('slot_id');",
+                  "    const target = slots.find(s => s.slotId === slotId);",
+                  "    pm.expect(target, `slot ${slotId} not found`).to.exist;",
+                  "    pm.expect(target.status).to.eql('HELD');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{venue_url}}/api/v1/venues/{{venue_id}}/slots?date={{slot_date}}",
+              "host": ["{{venue_url}}"],
+              "path": ["api","v1","venues","{{venue_id}}","slots"],
+              "query": [{ "key": "date", "value": "{{slot_date}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Confirm Booking",
+      "item": [
+        {
+          "name": "4.1 Confirm Booking → capture confirmation_number",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('response has confirmationNumber', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.confirmationNumber).to.match(/^SL-\\d{8}-\\d{4}$/);",
+                  "    pm.expect(b.bookings).to.be.an('array').with.lengthOf(1);",
+                  "    pm.expect(b.bookings[0].status).to.eql('CONFIRMED');",
+                  "    pm.collectionVariables.set('confirmation_number', b.confirmationNumber);",
+                  "    console.log('Booking confirmed:', b.confirmationNumber);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{session_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{booking_url}}/api/v1/bookings", "host": ["{{booking_url}}"], "path": ["api","v1","bookings"] }
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Verify slot is BOOKED  [same JWT, venue-service]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('target slot is BOOKED', () => {",
+                  "    const slots  = pm.response.json();",
+                  "    const slotId = pm.collectionVariables.get('slot_id');",
+                  "    const target = slots.find(s => s.slotId === slotId);",
+                  "    pm.expect(target, `slot ${slotId} not found`).to.exist;",
+                  "    pm.expect(target.status).to.eql('BOOKED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{venue_url}}/api/v1/venues/{{venue_id}}/slots?date={{slot_date}}",
+              "host": ["{{venue_url}}"],
+              "path": ["api","v1","venues","{{venue_id}}","slots"],
+              "query": [{ "key": "date", "value": "{{slot_date}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.3 Get Booking History",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('history contains our booking', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.sessions).to.be.an('array').that.is.not.empty;",
+                  "    const cn = pm.collectionVariables.get('confirmation_number');",
+                  "    const session = b.sessions.find(s => s.confirmationNumber === cn);",
+                  "    pm.expect(session, `session ${cn} not found in history`).to.exist;",
+                  "    console.log('History entry found for', cn);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{booking_url}}/api/v1/bookings", "host": ["{{booking_url}}"], "path": ["api","v1","bookings"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Cancel",
+      "item": [
+        {
+          "name": "5.1 Cancel Booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('response has confirmationNumber and CANCELLED status', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.confirmationNumber).to.eql(pm.collectionVariables.get('confirmation_number'));",
+                  "    pm.expect(b.cancelledAt).to.be.a('string');",
+                  "    b.bookings.forEach(bk => pm.expect(bk.status).to.eql('CANCELLED'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{booking_url}}/api/v1/bookings/{{confirmation_number}}/cancel",
+              "host": ["{{booking_url}}"],
+              "path": ["api","v1","bookings","{{confirmation_number}}","cancel"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.2 Verify slot is AVAILABLE again  [same JWT, venue-service]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('target slot is AVAILABLE again', () => {",
+                  "    const slots  = pm.response.json();",
+                  "    const slotId = pm.collectionVariables.get('slot_id');",
+                  "    const target = slots.find(s => s.slotId === slotId);",
+                  "    pm.expect(target, `slot ${slotId} not found`).to.exist;",
+                  "    pm.expect(target.status).to.eql('AVAILABLE');",
+                  "    console.log('Full flow complete. Slot is AVAILABLE again.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{venue_url}}/api/v1/venues/{{venue_id}}/slots?date={{slot_date}}",
+              "host": ["{{venue_url}}"],
+              "path": ["api","v1","venues","{{venue_id}}","slots"],
+              "query": [{ "key": "date", "value": "{{slot_date}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

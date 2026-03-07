@@ -25,11 +25,12 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 9 | booking-service: Hold Expiry Job | COMPLETE |
 | 10 | booking-service: Cancellation + History | COMPLETE |
 | 11 | notification-service | COMPLETE |
-| 12 | Resilience | NOT STARTED |
-| 13 | Observability | NOT STARTED |
-| 14 | Frontend: Auth + Browse | NOT STARTED |
-| 15 | Frontend: Booking Flows | NOT STARTED |
-| 16 | Infrastructure (AWS) | NOT STARTED |
+| 12 | Resilience | COMPLETE |
+| 13 | API Documentation (Swagger UI) | COMPLETE |
+| 14 | Observability | NOT STARTED |
+| 15 | Frontend: Auth + Browse | NOT STARTED |
+| 16 | Frontend: Booking Flows | NOT STARTED |
+| 17 | Infrastructure (AWS) | NOT STARTED |
 
 ---
 
@@ -1112,7 +1113,63 @@ Note: Do NOT retry on `SETNX` returning nil — that is a business result (slot 
 
 ---
 
-## Stage 13 — Observability
+## Stage 13 — API Documentation (Swagger UI)
+
+**Status:** COMPLETE
+
+**Goal:** Add interactive OpenAPI documentation to all services. Every endpoint is explorable and callable from the browser without any external tools.
+
+**Prerequisites:** Stage 12 complete.
+
+### What to Build
+
+**Dependencies (user-service, venue-service, booking-service — `build.gradle.kts`):**
+```kotlin
+implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.4")
+```
+notification-service has no public endpoints — skip the dependency there.
+
+**`application.yml` additions (user-service, venue-service, booking-service):**
+```yaml
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+```
+
+**SecurityConfig updates (user-service, venue-service, booking-service):** add `/swagger-ui/**`, `/swagger-ui.html`, `/v3/api-docs/**` to `permitAll()` so the UI loads without a JWT.
+
+**`OpenApiConfig.java` (one per service — user/venue/booking):** configure a Bearer JWT security scheme so the "Authorize" button appears in the UI, allowing calls to protected endpoints.
+
+```java
+@Configuration
+public class OpenApiConfig {
+    @Bean
+    public OpenAPI openAPI() {
+        return new OpenAPI()
+            .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
+            .components(new Components()
+                .addSecuritySchemes("bearerAuth", new SecurityScheme()
+                    .type(SecurityScheme.Type.HTTP)
+                    .scheme("bearer")
+                    .bearerFormat("JWT")));
+    }
+}
+```
+
+### Acceptance Criteria
+- [ ] `http://localhost:8081/swagger-ui.html` loads all user-service endpoints
+- [ ] `http://localhost:8082/swagger-ui.html` loads all venue-service endpoints
+- [ ] `http://localhost:8083/swagger-ui.html` loads all booking-service endpoints
+- [ ] "Authorize" button present on all 3 services — paste a JWT and call protected endpoints successfully
+- [ ] `GET /v3/api-docs` returns valid OpenAPI JSON on all 3 services
+- [ ] All unit and integration tests pass
+
+---
+
+## Stage 14 — Observability
 
 **Status:** NOT STARTED
 
@@ -1175,7 +1232,7 @@ management:
 
 ---
 
-## Stage 14 — Frontend: Auth + Browse
+## Stage 15 — Frontend: Auth + Browse
 
 **Status:** NOT STARTED
 
@@ -1234,7 +1291,7 @@ client.interceptors.request.use(config => {
 
 ---
 
-## Stage 15 — Frontend: Booking Flows
+## Stage 16 — Frontend: Booking Flows
 
 **Status:** NOT STARTED
 
@@ -1278,13 +1335,33 @@ client.interceptors.request.use(config => {
 
 ---
 
-## Stage 16 — Infrastructure (AWS)
+## Stage 17 — Infrastructure (AWS)
 
 **Status:** NOT STARTED
 
 **Goal:** Deploy the fully working local system to AWS. Provision all infrastructure with Terraform. Full CI/CD pipeline.
 
 **Prerequisites:** Stages 1–15 complete and all services passing tests.
+
+> ⚠️ **BEFORE DEPLOY — Add E2E cross-service tests:**
+> No test currently makes a real HTTP call from one service to another.
+> Each service's integration tests create JWTs in-process using `Hs256JwtProvider` — they never call user-service's HTTP endpoint.
+> Pre-deploy steps:
+> 1. Create a Postman collection covering the full happy path:
+>    `register → login → create venue (ADMIN) → generate slots → POST /holds → POST /bookings → GET /bookings → POST /cancel`
+> 2. Run via Newman in CI: `newman run seatlock-e2e.postman_collection.json --env-var base_url=http://localhost`
+> 3. Optionally add a dedicated `e2e-tests` Gradle module with Testcontainers that starts all services and runs the same flow via `RestTemplate`.
+> This is the only test that would catch a JWT secret mismatch or claim-name divergence between services.
+
+> ⚠️ **BEFORE DEPLOY — RS256 JWT migration required:**
+> Currently all three services share the same HS256 symmetric secret (local dev shortcut).
+> Pre-deploy steps:
+> 1. Generate an RSA 2048 key pair
+> 2. user-service: sign tokens with the **private key** (RS256)
+> 3. venue-service + booking-service: validate tokens with the **public key only**
+> 4. Remove the shared secret from venue/booking `application.yml` and Vault
+> 5. Store the private key in Vault under `secret/seatlock/jwt.private-key`; distribute public key as an env var or Vault path
+> See `docs/CONTEXT.md → Phase 0 Compromises` for context.
 
 ### What to Build
 

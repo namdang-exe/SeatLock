@@ -5,8 +5,7 @@ import com.seatlock.booking.client.InternalSlotResponse;
 import com.seatlock.booking.client.SlotVerificationClient;
 import com.seatlock.booking.exception.VenueServiceUnavailableException;
 import com.seatlock.booking.dto.HoldResponse;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import com.seatlock.common.security.Hs256JwtProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,8 +19,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -251,13 +248,8 @@ class HoldControllerIT extends AbstractIntegrationTest {
     }
 
     private String issueToken(UUID userId) {
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        return Jwts.builder()
-                .subject("test@example.com")
-                .claim("userId", userId.toString())
-                .claim("role", "USER")
-                .expiration(Date.from(Instant.now().plus(1, ChronoUnit.HOURS)))
-                .signWith(key)
-                .compact();
+        return new Hs256JwtProvider(jwtSecret)
+                .issue(userId, "test@example.com", "USER",
+                        Instant.now().plus(1, ChronoUnit.HOURS));
     }
 }

@@ -27,6 +27,16 @@ management:
       exposure:
         include: health
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+
 seatlock:
   jwt:
-    secret: "seatlock-dev-jwt-secret-change-in-prod-32chars"
+    algorithm: ${SEATLOCK_JWT_ALGORITHM:HS256}
+    secret: ${SEATLOCK_JWT_SECRET:changeme-use-vault-in-production-minimum-32ch}
+    private-key: ${SEATLOCK_JWT_PRIVATE_KEY:}
+    public-key: ${SEATLOCK_JWT_PUBLIC_KEY:}

@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–12 complete, Stage 13 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–13 complete, Stage 14 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -394,7 +394,7 @@ Full list with resolution notes: `docs/open-questions.md`
 | Vault HA cluster | Phase 1+ | Currently single ECS task |
 | Venue-timezone date filtering | Phase 1+ | Currently UTC only |
 | Rate limiting numeric limits on POST /holds | Phase 1 | Endpoint identified; limits not set |
-| Asymmetric JWT (RS256) for inter-service auth | Phase 2+ | Currently symmetric HMAC |
+| Asymmetric JWT (RS256) for user auth | **BEFORE DEPLOY** | All 3 services share the same HS256 secret (local dev only). Pre-deploy: generate RSA key pair; user-service signs with private key; venue/booking-service hold public key only. A compromised service currently can forge tokens for any user. |
 | Account lifecycle events (user deletion/suspension) | Phase 1+ | No user→booking async events yet |
 
 ---

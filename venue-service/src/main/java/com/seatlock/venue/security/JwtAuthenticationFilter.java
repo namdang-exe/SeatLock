@@ -1,6 +1,6 @@
 package com.seatlock.venue.security;
 
-import com.seatlock.common.security.JwtUtils;
+import com.seatlock.common.security.JwtVerifier;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -19,10 +19,10 @@ import java.util.List;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtUtils jwtUtils;
+    private final JwtVerifier jwtVerifier;
 
-    public JwtAuthenticationFilter(JwtUtils jwtUtils) {
-        this.jwtUtils = jwtUtils;
+    public JwtAuthenticationFilter(JwtVerifier jwtVerifier) {
+        this.jwtVerifier = jwtVerifier;
     }
 
     @Override
@@ -38,7 +38,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
             try {
-                Claims claims = jwtUtils.parseAndValidate(token);
+                Claims claims = jwtVerifier.parseAndValidate(token);
                 String email = claims.getSubject();
                 String role = claims.get("role", String.class);
                 var auth = new UsernamePasswordAuthenticationToken(
