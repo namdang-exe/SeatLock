@@ -132,22 +132,36 @@ cd D:/projects/SeatLock && gradlew :booking-service:bootRun       # http://local
 cd D:/projects/SeatLock && gradlew :notification-service:bootRun  # http://localhost:8084
 ```
 
-### 3 — Verify everything is up
+### 3 — Start the frontend (one terminal)
+
+```bash
+# Terminal 5
+cd D:/projects/SeatLock/seatlock-ui
+npm install      # first time only
+npm run dev      # http://localhost:5173
+```
+
+The Vite dev server proxies all API calls to the correct backend service — no CORS config needed.
+
+### 4 — Verify everything is up
 
 ```bash
 # {"status":"UP"}
-curl http://localhost:8081/actuator/health   
-curl http://localhost:8082/actuator/health   
-curl http://localhost:8083/actuator/health   
-curl http://localhost:8084/actuator/health  
+curl http://localhost:8081/actuator/health
+curl http://localhost:8082/actuator/health
+curl http://localhost:8083/actuator/health
+curl http://localhost:8084/actuator/health
 ```
 
 ### Useful URLs
 
 | Service | URL |
 |---------|-----|
-| Mailhog (captured emails) | http://localhost:8025 |
+| **Frontend** | http://localhost:5173 |
+| Mailpit (captured emails) | http://localhost:8025 |
 | ElasticMQ (SQS web UI) | http://localhost:9325 |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3001 |
 
 ### Stop everything
 
@@ -174,6 +188,7 @@ seatlock/
 ├── venue-service/             ← venues, slots, availability cache   (port 8082)
 ├── booking-service/           ← holds, bookings, expiry job         (port 8083)
 ├── notification-service/      ← SQS consumer, email/SMS dispatch    (port 8084)
+├── seatlock-ui/               ← React 18 frontend (Vite dev server)  (port 5173)
 ├── infra/
 │   ├── postgres/init.sql      ← creates user_db, venue_db, booking_db
 │   └── terraform/             ← AWS infrastructure (Stage 16)
@@ -242,7 +257,8 @@ See docs/PROJECT_PLAN.md for full breakdown and current status.
 See docs/decisions/ for all ADRs.
 See docs/CONTEXT.md for a quick summary of every decision made.
 
-## Prometheus Metrics
-All services expose Prometheus metrics at `/actuator/prometheus` (e.g. http://localhost:8081/actuator/prometheus).
-You can view them in a browser or set up a local Prometheus instance to scrape and visualize them.
-http://localhost:3001
+## Observability
+
+All services expose Prometheus metrics at `/actuator/prometheus`.
+Prometheus scrapes all four services automatically — view targets at http://localhost:9090/targets.
+Grafana dashboard (SeatLock Overview) is pre-provisioned at http://localhost:3001 (no login required).

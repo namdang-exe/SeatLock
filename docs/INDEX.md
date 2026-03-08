@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–14 complete, Stage 15 next |
-| Current implementation stage | Stage 15 — Frontend: Auth + Browse |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–16 complete, Stage 17 next |
+| Current implementation stage | Stage 17 — Infrastructure (AWS) |
 
 ---
 
@@ -282,8 +282,8 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | — | Maintenance: cross-service DB integrity | V3 migration (local venues/slots), InternalSlotResponse venueName, write-through upsert in HoldService | COMPLETE |
 | — | Maintenance: venue_db slot status write gap | Second JdbcTemplate (venueJdbcTemplate) wired to venue_db; best-effort slot status UPDATE in all 4 write paths | COMPLETE |
 | 14 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | COMPLETE |
-| 15 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | NOT STARTED |
-| 16 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | NOT STARTED |
+| 15 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | COMPLETE |
+| 16 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | COMPLETE |
 | 17 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | NOT STARTED |
 
 ### Stage 10 — booking-service: Cancellation + History

@@ -1304,7 +1304,7 @@ management:
 
 ## Stage 15 — Frontend: Auth + Browse
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** React frontend — authentication and slot browsing with live 5-second refresh. No booking logic yet.
 
@@ -1363,7 +1363,7 @@ client.interceptors.request.use(config => {
 
 ## Stage 16 — Frontend: Booking Flows
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** Hold confirmation, booking history, and cancellation in the React frontend.
 

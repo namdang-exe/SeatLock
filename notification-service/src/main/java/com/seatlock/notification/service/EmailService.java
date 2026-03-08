@@ -29,9 +29,9 @@ public class EmailService {
 
     public void sendBookingConfirmed(BookingConfirmedEvent event) {
         send("Booking confirmed \u2014 " + event.confirmationNumber(),
-             "Your booking " + event.confirmationNumber() + " is confirmed.\n" +
-             "Slots booked: " + event.slotIds().size() + "\n" +
-             "Session ID: " + event.sessionId());
+             "Your booking is confirmed.\n\n" +
+             "Confirmation number: " + event.confirmationNumber() + "\n" +
+             "Slots booked: " + event.slotIds().size());
     }
 
     public void sendBookingCancelled(BookingCancelledEvent event) {
@@ -42,7 +42,8 @@ public class EmailService {
 
     public void sendHoldExpired(HoldExpiredEvent event) {
         send("Your hold has expired",
-             "Your hold for session " + event.sessionId() + " has expired.\n" +
+             "Your hold for " + event.expiredSlotIds().size() +
+             " slot" + (event.expiredSlotIds().size() == 1 ? "" : "s") + " has expired.\n\n" +
              "Please browse available slots and create a new booking.");
     }
 
