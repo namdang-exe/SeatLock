@@ -27,6 +27,11 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+        // venue-datasource points to the same container — in tests the local mirror
+        // slots table acts as both booking_db and venue_db (single-DB Testcontainer setup)
+        registry.add("seatlock.venue-datasource.url", postgres::getJdbcUrl);
+        registry.add("seatlock.venue-datasource.username", postgres::getUsername);
+        registry.add("seatlock.venue-datasource.password", postgres::getPassword);
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
     }

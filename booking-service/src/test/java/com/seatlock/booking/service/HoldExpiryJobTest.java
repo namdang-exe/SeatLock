@@ -31,6 +31,7 @@ import static org.mockito.Mockito.when;
 class HoldExpiryJobTest {
 
     @Mock JdbcTemplate jdbcTemplate;
+    @Mock JdbcTemplate venueJdbcTemplate;
     @Mock PlatformTransactionManager txManager;
     @Mock BookingEventPublisher eventPublisher;
 
@@ -43,7 +44,7 @@ class HoldExpiryJobTest {
 
     @BeforeEach
     void setUp() {
-        job = new HoldExpiryJob(jdbcTemplate, txManager, eventPublisher);
+        job = new HoldExpiryJob(jdbcTemplate, venueJdbcTemplate, txManager, eventPublisher);
         job.batchSize = 100;
         job.maxRetries = 3;
         job.retryBackoffBaseMs = 0; // no sleep in tests

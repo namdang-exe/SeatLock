@@ -1,17 +1,5 @@
--- Test-only: minimal stub tables to satisfy cross-service FK constraints.
--- In production the shared Postgres cluster has real tables owned by user-service and venue-service.
+-- Test-only: users stub for test data setup (user_id is stored as plain UUID in holds/bookings).
+-- venues and slots are created by V3__create_local_tables.sql (booking-service's own tables).
 CREATE TABLE IF NOT EXISTS users (
     user_id UUID PRIMARY KEY
-);
-
-CREATE TABLE IF NOT EXISTS venues (
-    venue_id UUID PRIMARY KEY,
-    name     VARCHAR(200)
-);
-
-CREATE TABLE IF NOT EXISTS slots (
-    slot_id    UUID PRIMARY KEY,
-    venue_id   UUID,
-    status     VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
-    start_time TIMESTAMPTZ
 );

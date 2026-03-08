@@ -2,8 +2,8 @@ CREATE TABLE bookings (
     booking_id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id          UUID        NOT NULL,
     confirmation_number VARCHAR(20) NOT NULL,
-    user_id             UUID        NOT NULL REFERENCES users (user_id),
-    slot_id             UUID        NOT NULL REFERENCES slots (slot_id),
+    user_id             UUID        NOT NULL,
+    slot_id             UUID        NOT NULL,
     hold_id             UUID        NOT NULL REFERENCES holds (hold_id),
     status              VARCHAR(10) NOT NULL DEFAULT 'CONFIRMED'
                                     CHECK (status IN ('CONFIRMED', 'CANCELLED')),

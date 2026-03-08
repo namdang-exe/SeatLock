@@ -1,8 +1,8 @@
 CREATE TABLE holds (
     hold_id    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID        NOT NULL,
-    user_id    UUID        NOT NULL REFERENCES users (user_id),
-    slot_id    UUID        NOT NULL REFERENCES slots (slot_id),
+    user_id    UUID        NOT NULL,
+    slot_id    UUID        NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     status     VARCHAR(10) NOT NULL DEFAULT 'ACTIVE'
                            CHECK (status IN ('ACTIVE', 'CONFIRMED', 'EXPIRED', 'RELEASED')),

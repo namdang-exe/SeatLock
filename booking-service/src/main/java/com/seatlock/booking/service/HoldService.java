@@ -9,9 +9,12 @@ import com.seatlock.booking.dto.HoldResponse.HoldItemResponse;
 import com.seatlock.booking.exception.RedisUnavailableException;
 import com.seatlock.booking.exception.SlotNotAvailableException;
 import com.seatlock.booking.redis.HoldPayload;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
 import com.seatlock.booking.redis.RedisHoldRepository;
 import com.seatlock.booking.repository.HoldRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -28,23 +31,28 @@ import java.util.stream.Collectors;
 @Service
 public class HoldService {
 
+    private static final Logger log = LoggerFactory.getLogger(HoldService.class);
+
     static final int HOLD_DURATION_MINUTES = 30;
 
     private final HoldRepository holdRepository;
     private final RedisHoldRepository redisHoldRepository;
     private final SlotVerificationClient slotVerificationClient;
     private final JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate venueJdbcTemplate;
     private final TransactionTemplate transactionTemplate;
 
     public HoldService(HoldRepository holdRepository,
                        RedisHoldRepository redisHoldRepository,
                        SlotVerificationClient slotVerificationClient,
                        JdbcTemplate jdbcTemplate,
+                       @Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate,
                        PlatformTransactionManager txManager) {
         this.holdRepository = holdRepository;
         this.redisHoldRepository = redisHoldRepository;
         this.slotVerificationClient = slotVerificationClient;
         this.jdbcTemplate = jdbcTemplate;
+        this.venueJdbcTemplate = venueJdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(txManager);
     }
 
@@ -100,9 +108,25 @@ public class HoldService {
             throw new SlotNotAvailableException(unavailableSlotIds);
         }
 
-        // Step 6: Postgres transaction — INSERT holds + UPDATE slots.status
+        // Step 6: Postgres transaction — upsert slot/venue metadata, INSERT holds, UPDATE slots.status
         try {
             transactionTemplate.execute(status -> {
+                // Enforce cross-service referential integrity at the application layer:
+                // write-through slot and venue data fetched from venue-service into local tables.
+                for (InternalSlotResponse slot : verifiedSlots) {
+                    if (slot.venueId() != null) {
+                        jdbcTemplate.update(
+                                "INSERT INTO venues (venue_id, name) VALUES (?, ?) " +
+                                "ON CONFLICT (venue_id) DO UPDATE SET name = EXCLUDED.name",
+                                slot.venueId(), slot.venueName());
+                    }
+                    java.sql.Timestamp startTime = slot.startTime() != null
+                            ? java.sql.Timestamp.from(slot.startTime()) : null;
+                    jdbcTemplate.update(
+                            "INSERT INTO slots (slot_id, venue_id, status, start_time) VALUES (?, ?, 'AVAILABLE', ?) " +
+                            "ON CONFLICT (slot_id) DO UPDATE SET venue_id = EXCLUDED.venue_id, start_time = EXCLUDED.start_time",
+                            slot.slotId(), slot.venueId(), startTime);
+                }
                 holdRepository.saveAll(holds);
                 UUID[] slotIdArray = slotIds.toArray(new UUID[0]);
                 int updated = jdbcTemplate.update(conn -> {
@@ -126,11 +150,30 @@ public class HoldService {
             throw e;
         }
 
-        // Step 7: Invalidate availability cache — non-fatal
+        // Step 7: Update slot status in venue_db — best-effort (non-fatal)
+        updateSlotStatusInVenueDb("HELD", "AVAILABLE", slotIds);
+
+        // Step 8: Invalidate availability cache — non-fatal
         invalidateSlotCaches(verifiedSlots);
 
-        // Step 8: Return 200
+        // Step 9: Return 200
         return toResponse(sessionId, expiresAt, holds);
+    }
+
+    private void updateSlotStatusInVenueDb(String newStatus, String prevStatus, List<UUID> slotIds) {
+        try {
+            UUID[] arr = slotIds.toArray(new UUID[0]);
+            venueJdbcTemplate.update(conn -> {
+                var ps = conn.prepareStatement(
+                        "UPDATE slots SET status = ? WHERE slot_id = ANY(?) AND status = ?");
+                ps.setString(1, newStatus);
+                ps.setArray(2, conn.createArrayOf("uuid", arr));
+                ps.setString(3, prevStatus);
+                return ps;
+            });
+        } catch (Exception e) {
+            log.warn("Failed to update slot status to {} in venue_db (non-fatal): {}", newStatus, e.getMessage());
+        }
     }
 
     private void invalidateSlotCaches(List<InternalSlotResponse> verifiedSlots) {

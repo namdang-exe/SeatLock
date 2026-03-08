@@ -6,6 +6,7 @@ import java.util.UUID;
 public record InternalSlotResponse(
         UUID slotId,
         UUID venueId,
+        String venueName,
         Instant startTime,
         String status) {
 }

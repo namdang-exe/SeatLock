@@ -13,6 +13,9 @@ import com.seatlock.booking.exception.BookingNotFoundException;
 import com.seatlock.booking.exception.CancellationWindowClosedException;
 import com.seatlock.booking.exception.ForbiddenException;
 import com.seatlock.booking.redis.RedisHoldRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -35,7 +38,10 @@ import java.util.stream.Collectors;
 @Service
 public class CancellationService {
 
+    private static final Logger log = LoggerFactory.getLogger(CancellationService.class);
+
     private final JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate venueJdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final RedisHoldRepository redisHoldRepository;
     private final BookingEventPublisher eventPublisher;
@@ -73,10 +79,12 @@ public class CancellationService {
     );
 
     public CancellationService(JdbcTemplate jdbcTemplate,
+                               @Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate,
                                PlatformTransactionManager txManager,
                                RedisHoldRepository redisHoldRepository,
                                BookingEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
+        this.venueJdbcTemplate = venueJdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(txManager);
         this.redisHoldRepository = redisHoldRepository;
         this.eventPublisher = eventPublisher;
@@ -145,7 +153,10 @@ public class CancellationService {
             return null;
         });
 
-        // Step 6: Redis cleanup — DEL hold:{slotId} (ADR-008 stale key protection)
+        // Step 6: Update slot status in venue_db — best-effort (non-fatal)
+        updateSlotStatusInVenueDb("AVAILABLE", confirmedSlotIds);
+
+        // Step 7: Redis cleanup — DEL hold:{slotId} (ADR-008 stale key protection)
         confirmedSlotIds.forEach(redisHoldRepository::del);
         // Also invalidate the slot availability cache for each affected venue+date
         confirmed.stream()
@@ -159,7 +170,7 @@ public class CancellationService {
                         b.venueId(),
                         b.startTime().atZone(ZoneOffset.UTC).toLocalDate().toString()));
 
-        // Step 7: Publish BookingCancelledEvent (no-op stub until Stage 11)
+        // Step 8: Publish BookingCancelledEvent (no-op stub until Stage 11)
         try {
             eventPublisher.publishBookingCancelled(
                     new BookingCancelledEvent(confirmationNumber, sessionId, userId,
@@ -168,7 +179,7 @@ public class CancellationService {
             // Event publishing must not affect cancel response
         }
 
-        // Step 8: Return 200 — build response from in-memory data, reflecting new CANCELLED state
+        // Step 9: Return 200 — build response from in-memory data, reflecting new CANCELLED state
         List<BookingWithSlot> updated = all.stream()
                 .map(b -> "CONFIRMED".equals(b.status())
                         ? new BookingWithSlot(b.bookingId(), b.sessionId(), b.confirmationNumber(),
@@ -271,6 +282,21 @@ public class CancellationService {
     }
 
     // --- private helpers ---
+
+    private void updateSlotStatusInVenueDb(String newStatus, List<UUID> slotIds) {
+        try {
+            UUID[] arr = slotIds.toArray(new UUID[0]);
+            venueJdbcTemplate.update(conn -> {
+                var ps = conn.prepareStatement(
+                        "UPDATE slots SET status = ? WHERE slot_id = ANY(?)");
+                ps.setString(1, newStatus);
+                ps.setArray(2, conn.createArrayOf("uuid", arr));
+                return ps;
+            });
+        } catch (Exception e) {
+            log.warn("Failed to update slot status to {} in venue_db (non-fatal): {}", newStatus, e.getMessage());
+        }
+    }
 
     private List<BookingWithSlot> loadForCancellation(String confirmationNumber) {
         return jdbcTemplate.query(

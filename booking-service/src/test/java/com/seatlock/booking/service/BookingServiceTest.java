@@ -49,6 +49,7 @@ class BookingServiceTest {
     @Mock RedisHoldRepository redisHoldRepository;
     @Mock SlotVerificationClient slotVerificationClient;
     @Mock JdbcTemplate jdbcTemplate;
+    @Mock JdbcTemplate venueJdbcTemplate;
     @Mock PlatformTransactionManager txManager;
     @Mock BookingEventPublisher eventPublisher;
 
@@ -63,7 +64,7 @@ class BookingServiceTest {
     @BeforeEach
     void setUp() {
         bookingService = new BookingService(bookingRepository, holdRepository, redisHoldRepository,
-                slotVerificationClient, jdbcTemplate, txManager,
+                slotVerificationClient, jdbcTemplate, venueJdbcTemplate, txManager,
                 confirmationNumberGenerator, eventPublisher);
 
         lenient().when(txManager.getTransaction(any(TransactionDefinition.class)))

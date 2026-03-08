@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–13 complete, Stage 14 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–13 complete + 2 maintenance sessions, Stage 14 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -197,8 +197,24 @@
 - We chose **`ServiceJwtAuthenticationFilter` as a `@Component` that creates its own `JwtUtils` instance** (from the injected `seatlock.service-jwt.secret` value) rather than a separate `@Configuration` bean. This avoids bean ambiguity between the user `JwtUtils` bean (from `JwtConfig`) and a potential second service-JWT `JwtUtils` bean — both are `JwtUtils` type and Spring would fail to autowire by type.
 - We chose **`shouldNotFilter` on `JwtAuthenticationFilter` (venue-service)** to skip `/api/v1/internal/**` paths, ensuring user-JWT parsing never runs on internal routes. `ServiceJwtAuthenticationFilter` mirrors this by only activating on `/api/v1/internal/**`. The two filters are completely non-overlapping.
 - We chose **a `ClientHttpRequestInterceptor` on `RestClient`** (not `defaultHeader`) to inject the service JWT on booking-service's venue calls. `defaultHeader` computes the value once at bean-creation time; the interceptor generates a fresh token for every request, respecting the 5-minute TTL.
-- We chose **`V0__create_stub_tables.sql` in `booking-service/src/test/resources/db/migration/`** as test-only stub migration. It creates minimal `users` and `slots` tables so the cross-service FK constraints in V1 and V2 can be satisfied in the single-container Testcontainers setup. Flyway picks it up because test resources are on the integrationTest classpath via `sourceSets.test.get().output`.
+- We chose **`V0__create_stub_tables.sql` in `booking-service/src/test/resources/db/migration/`** as test-only stub migration. It creates a minimal `users` table for test data setup. Flyway picks it up because test resources are on the integrationTest classpath via `sourceSets.test.get().output`.
 - We chose **`SecurityConfig` in booking-service permits only `/actuator/health` and `/error`** publicly (all else requires a user JWT). This is the correct shape for Stages 7+; no `/api/v1/**` routes exist yet so no further rules are needed in Stage 6.
+
+### Implementation Decisions (Phase 1 — Maintenance: Cross-Service DB Integrity)
+
+- We chose **removing cross-DB FK constraints from V1/V2 migrations** over keeping them, because PostgreSQL does not support FK constraints across separate databases. `booking_db` cannot reference `users` in `user_db` or `slots` in `venue_db`. Data integrity is enforced at the application layer instead.
+- We chose **`V3__create_local_tables.sql` creating `slots` and `venues` in `booking_db`** as booking-service's own read-model, not as shared tables. booking-service exclusively owns `slots.status` transitions (AVAILABLE→HELD→BOOKED→AVAILABLE); venue-service owns the authoritative slot metadata.
+- We chose **write-through cache on first hold** (upsert slot+venue inside the hold transaction) over event-driven sync, because it is simpler, requires no message broker changes, and guarantees the row exists before `UPDATE slots SET status = 'HELD'` runs in the same transaction.
+- We chose **`java.sql.Timestamp.from(instant)` when passing `java.time.Instant` to `jdbcTemplate.update(String, Object...)`** because the PostgreSQL JDBC driver cannot infer the SQL type from `java.time.Instant` via `setObject()` without an explicit Types hint. Always convert: `Timestamp.from(instant)` before passing to varargs JdbcTemplate methods.
+- We chose **`lenient()` for PSC stubs that coexist with `update(String, Object...)` calls in the same transaction lambda** to prevent Mockito's strict `PotentialStubbingProblem`. The upsert calls use a different method overload signature; strict mode flags the PSC stub as potentially mismatched.
+- We chose **`any()` instead of `anyList()` when matching `venueRepository.findAllById()`** because `findAllById` receives a `Set<UUID>` (from `Collectors.toSet()`), not a `List`. `anyList()` only matches `java.util.List` instances and silently fails to match a `Set`, causing `PotentialStubbingProblem`.
+
+### Implementation Decisions (Phase 1 — Maintenance: venue_db Slot Status Write Gap)
+
+- We chose **a second `DataSource` / `JdbcTemplate` (`venueJdbcTemplate`) wired to `venue_db`** over having booking-service call venue-service's internal API to update slot status, because the internal API does not expose a slot-status write endpoint and adding one would require a new endpoint + service JWT round-trip on the write hot path. The second datasource is simpler and works on both local (single Postgres container) and production (single RDS instance, multiple databases on same host).
+- We chose **best-effort venue_db UPDATE (catch-and-log, non-fatal)** over making it transactional with booking_db, because true two-phase commit across two datasources requires XA transactions (heavyweight, not supported by HikariCP default). Redis SETNX is the double-booking gate; the venue_db update is a correctness improvement for cache-miss reads only.
+- We chose **unit test (`HoldServiceTest.venueDbUpdateFails_holdStillSucceeds`) over integration test** for the non-fatal venue_db failure scenario, because Spring's `@MockitoBean` replaces ALL beans of a matching type — declaring `@MockitoBean(name = "venueJdbcTemplate") JdbcTemplate` caused Spring to replace both `JdbcTemplate` beans (primary + venue) with the same mock, breaking the booking_db transaction. Unit tests keep the two mocks independently injectable.
+- We chose **`@Qualifier("venueJdbcTemplate")` on constructor parameters** (not `@Resource` or `@Primary`) to avoid Spring auto-wiring ambiguity when two `JdbcTemplate` beans of the same type exist. The primary (auto-configured) JdbcTemplate has no qualifier; `venueJdbcTemplate` always requires explicit qualification.
 
 ### Implementation Decisions (Phase 1 — Stage 5)
 
@@ -389,7 +405,7 @@ Full list with resolution notes: `docs/open-questions.md`
 
 | Compromise | Phase | Note |
 |------------|-------|------|
-| Shared Postgres cluster (booking-service writes slots.status) | Phase 1 | Extract slot_availability into booking-service's DB |
+| Shared Postgres cluster (booking-service writes slots.status) | Phase 1 | Phase 1 fix: give booking-service a second DataSource/JdbcTemplate wired to venue_db to write slot status directly (works on single RDS instance). Phase 2 permanent fix: move `slots` table entirely into booking_db; venue-service becomes venue-definitions only (name/address/status); booking-service owns all slot lifecycle (generation, status transitions); eliminates cross-DB writes permanently. See `docs/BUGS.md` TODO entry for full detail. |
 | Full Redis-backed idempotency store | Phase 1 | Currently in-process dedup only |
 | Vault HA cluster | Phase 1+ | Currently single ECS task |
 | Venue-timezone date filtering | Phase 1+ | Currently UTC only |

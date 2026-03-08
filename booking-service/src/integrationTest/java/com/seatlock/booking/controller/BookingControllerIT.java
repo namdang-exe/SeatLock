@@ -60,6 +60,7 @@ class BookingControllerIT extends AbstractIntegrationTest {
         jdbcTemplate.execute("DELETE FROM bookings");
         jdbcTemplate.execute("DELETE FROM holds");
         jdbcTemplate.execute("DELETE FROM slots");
+        jdbcTemplate.execute("DELETE FROM venues");
         jdbcTemplate.execute("DELETE FROM users");
 
         jdbcTemplate.update("INSERT INTO users (user_id) VALUES (?)", userId);
@@ -67,7 +68,7 @@ class BookingControllerIT extends AbstractIntegrationTest {
 
         when(slotVerificationClient.verify(anyList()))
                 .thenReturn(List.of(new InternalSlotResponse(
-                        slotId, venueId,
+                        slotId, venueId, "Test Venue",
                         Instant.now().plus(1, ChronoUnit.HOURS),
                         "AVAILABLE")));
     }

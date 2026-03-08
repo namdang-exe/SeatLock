@@ -78,7 +78,7 @@ class CancellationControllerIT extends AbstractIntegrationTest {
                 slotId, venueId, Timestamp.from(slotStartTime));
 
         when(slotVerificationClient.verify(anyList()))
-                .thenReturn(List.of(new InternalSlotResponse(slotId, venueId, slotStartTime, "AVAILABLE")));
+                .thenReturn(List.of(new InternalSlotResponse(slotId, venueId, "Test Venue", slotStartTime, "AVAILABLE")));
     }
 
     // ---- Cancel happy path ----
@@ -166,7 +166,7 @@ class CancellationControllerIT extends AbstractIntegrationTest {
                 nearSlotId, venueId, Timestamp.from(nearStartTime));
 
         when(slotVerificationClient.verify(anyList()))
-                .thenReturn(List.of(new InternalSlotResponse(nearSlotId, venueId, nearStartTime, "AVAILABLE")));
+                .thenReturn(List.of(new InternalSlotResponse(nearSlotId, venueId, "Test Venue", nearStartTime, "AVAILABLE")));
 
         HoldResponse holdResp = createHold(userId, nearSlotId);
         UUID sessionId = holdResp.sessionId();
@@ -195,7 +195,7 @@ class CancellationControllerIT extends AbstractIntegrationTest {
                 "INSERT INTO slots (slot_id, venue_id, status, start_time) VALUES (?, ?, 'AVAILABLE', ?)",
                 slotId2, venueId, Timestamp.from(Instant.now().plus(72, ChronoUnit.HOURS)));
         when(slotVerificationClient.verify(anyList()))
-                .thenReturn(List.of(new InternalSlotResponse(slotId2, venueId,
+                .thenReturn(List.of(new InternalSlotResponse(slotId2, venueId, "Test Venue",
                         Instant.now().plus(72, ChronoUnit.HOURS), "AVAILABLE")));
 
         HoldResponse hold2 = createHold(userId, slotId2);

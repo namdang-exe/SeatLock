@@ -4,6 +4,7 @@ import com.seatlock.booking.event.BookingEventPublisher;
 import com.seatlock.booking.event.HoldExpiredEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,6 +26,7 @@ public class HoldExpiryJob {
     private static final Logger log = LoggerFactory.getLogger(HoldExpiryJob.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate venueJdbcTemplate;
     private final PlatformTransactionManager txManager;
     private final BookingEventPublisher eventPublisher;
 
@@ -37,9 +39,12 @@ public class HoldExpiryJob {
     @Value("${seatlock.expiry.retry-backoff-base-ms:500}")
     long retryBackoffBaseMs;
 
-    public HoldExpiryJob(JdbcTemplate jdbcTemplate, PlatformTransactionManager txManager,
+    public HoldExpiryJob(JdbcTemplate jdbcTemplate,
+                         @Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate,
+                         PlatformTransactionManager txManager,
                          BookingEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
+        this.venueJdbcTemplate = venueJdbcTemplate;
         this.txManager = txManager;
         this.eventPublisher = eventPublisher;
     }
@@ -106,6 +111,22 @@ public class HoldExpiryJob {
             });
 
             // Step 3: NO REDIS OPERATION — Redis TTL has already fired; keys are gone.
+
+            // Step 3b: Update slot status in venue_db — best-effort (non-fatal)
+            if (!expired.isEmpty()) {
+                UUID[] expiredSlotIds = expired.stream().map(ExpiredHoldRow::slotId).toArray(UUID[]::new);
+                try {
+                    venueJdbcTemplate.update(conn -> {
+                        var ps = conn.prepareStatement(
+                                "UPDATE slots SET status = 'AVAILABLE' " +
+                                "WHERE slot_id = ANY(?) AND status = 'HELD'");
+                        ps.setArray(1, conn.createArrayOf("uuid", expiredSlotIds));
+                        return ps;
+                    });
+                } catch (Exception e) {
+                    log.warn("Failed to update expired slot status in venue_db (non-fatal): {}", e.getMessage());
+                }
+            }
 
             // Step 4: Publish one HoldExpiredEvent per session (group slots by sessionId)
             if (!expired.isEmpty()) {

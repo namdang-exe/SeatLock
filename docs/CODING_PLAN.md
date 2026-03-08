@@ -27,6 +27,8 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 11 | notification-service | COMPLETE |
 | 12 | Resilience | COMPLETE |
 | 13 | API Documentation (Swagger UI) | COMPLETE |
+| — | Maintenance: cross-service DB integrity | COMPLETE (between stages 13–14) |
+| — | Maintenance: venue_db slot status write gap | COMPLETE (between stages 13–14, session 2) |
 | 14 | Observability | NOT STARTED |
 | 15 | Frontend: Auth + Browse | NOT STARTED |
 | 16 | Frontend: Booking Flows | NOT STARTED |
@@ -1166,6 +1168,74 @@ public class OpenApiConfig {
 - [ ] "Authorize" button present on all 3 services — paste a JWT and call protected endpoints successfully
 - [ ] `GET /v3/api-docs` returns valid OpenAPI JSON on all 3 services
 - [ ] All unit and integration tests pass
+
+---
+
+## Maintenance — Cross-Service DB Integrity (between Stages 13–14)
+
+**Status:** COMPLETE
+
+**What was done:**
+
+**Problem:** `booking-service` local startup failed — `V1__create_holds.sql` and `V2__create_bookings.sql` had `REFERENCES users(user_id)` and `REFERENCES slots(slot_id)` pointing to tables that live in other databases (`user_db`, `venue_db`). PostgreSQL does not support cross-database FK constraints.
+
+**Solution — Application-layer referential integrity:**
+
+1. **Removed cross-DB FK constraints** from `V1__create_holds.sql` and `V2__create_bookings.sql`. `user_id` and `slot_id` are now plain UUID columns. Integrity is enforced in application code.
+
+2. **Created `V3__create_local_tables.sql`** — booking-service's own `slots` and `venues` tables in `booking_db`. These are booking-service's read-model of venue-service data, with booking-service owning `slot.status` (AVAILABLE/HELD/BOOKED).
+
+3. **Write-through cache on first hold** — `HoldService.createHold()` upserts slot metadata and venue name into local tables inside the same Postgres transaction, before the `UPDATE slots SET status = 'HELD'`. Slot existence is already validated upstream via `SlotVerificationClient.verify()`.
+
+4. **Added `venueName` to `InternalSlotResponse`** in both venue-service and booking-service. `InternalSlotController` now batch-fetches venue names (one `findAllById` call for all venue IDs in the response).
+
+5. **Updated `V0__create_stub_tables.sql`** — removed `slots`/`venues` stubs (now covered by V3 with `CREATE TABLE IF NOT EXISTS`), kept `users` stub for test data setup only.
+
+**New tests added:**
+- `HoldServiceTest.nullVenueId_slotWithoutVenue_holdCreatedSuccessfully` — null venueId guard
+- `CancellationServiceTest.nullStartTime_treatedAsWindowClosed_throwsCancellationWindowClosedException` — null startTime defensive path
+- `InternalSlotControllerTest` (5 tests) — venueName included/null, SlotNotFoundException, multi-venue batch fetch
+
+---
+
+## Maintenance — venue_db Slot Status Write Gap (between Stages 13–14, session 2)
+
+**Status:** COMPLETE
+
+**Problem:** `POST /api/v1/holds` (and booking confirmation, cancellation, expiry job) updated slot status
+only in booking-service's local mirror `slots` table in `booking_db`. The canonical `slots` table in `venue_db`
+was never touched. On a cache miss, venue-service read `venue_db` and returned `AVAILABLE` for a slot that
+was actually `HELD`/`BOOKED`. Double-booking was still prevented (Redis SETNX), but stale browse results
+were possible on cache miss.
+
+**Solution — Second `DataSource` / `JdbcTemplate` for venue_db:**
+
+1. **`VenueDbConfig.java`** — new `@Bean("venueJdbcTemplate")` that reads `seatlock.venue-datasource.*`
+   and builds a separate `JdbcTemplate` wired to `venue_db`. No interference with Spring Boot's primary
+   datasource autoconfiguration (different bean name; no `@Primary` concern).
+
+2. **All four write paths updated** — `HoldService`, `BookingService`, `CancellationService`,
+   `HoldExpiryJob` each inject `@Qualifier("venueJdbcTemplate")`. After the booking_db transaction
+   commits, a best-effort `UPDATE slots SET status = ?` runs against `venue_db`. Failures are caught,
+   logged as WARN, and swallowed — Redis SETNX remains the double-booking gate.
+
+3. **`application.yml`** — added `seatlock.venue-datasource.url/username/password` (defaults to
+   `venue_db` on same Postgres host as `booking_db`).
+
+4. **`AbstractIntegrationTest.java`** — wires `seatlock.venue-datasource.*` to the same Testcontainer
+   Postgres (single-DB setup in tests; both datasources share the same DB, so the venue_db UPDATE hits
+   the same `slots` table as the booking_db transaction).
+
+5. **Unit tests** — all four `@Mock JdbcTemplate venueJdbcTemplate` added to test constructors.
+
+**Key discovery — `@MockitoBean` replaces by type, not by name:**
+Attempting `@MockitoBean(name = "venueJdbcTemplate")` in `HoldControllerIT` broke all integration tests
+because Spring's `@MockitoBean` replaces beans by type, substituting BOTH JdbcTemplate beans (primary + venue)
+with the same mock. The non-fatal test was moved to unit level instead (see `HoldServiceTest`).
+
+**New test added:**
+- `HoldServiceTest.venueDbUpdateFails_holdStillSucceeds` — stubs `venueJdbcTemplate.update()` to throw
+  `DataAccessResourceFailureException`; asserts hold response is still returned correctly.
 
 ---
 

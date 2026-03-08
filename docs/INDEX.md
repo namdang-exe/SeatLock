@@ -182,9 +182,10 @@
 
 | File | Purpose |
 |------|---------|
-| `booking-service/src/main/resources/db/migration/V1__create_holds.sql` | Flyway DDL: `holds` table (cross-service FKs to users + slots) |
-| `booking-service/src/main/resources/db/migration/V2__create_bookings.sql` | Flyway DDL: `bookings` table (FK to holds) |
-| `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Test-only: minimal stub `users` + `slots` for FK satisfaction in Testcontainers |
+| `booking-service/src/main/resources/db/migration/V1__create_holds.sql` | Flyway DDL: `holds` table (`user_id`, `slot_id` plain UUID — cross-service FKs removed) |
+| `booking-service/src/main/resources/db/migration/V2__create_bookings.sql` | Flyway DDL: `bookings` table (FK to holds; cross-service FKs removed) |
+| `booking-service/src/main/resources/db/migration/V3__create_local_tables.sql` | Flyway DDL: booking-service's own local `venues` + `slots` tables (app-layer referential integrity) |
+| `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Test-only: minimal stub `users` only (venues/slots now created by V3 with `IF NOT EXISTS`) |
 | `booking-service/src/main/java/com/seatlock/booking/domain/HoldStatus.java` | Enum: `ACTIVE`, `CONFIRMED`, `EXPIRED`, `RELEASED` |
 | `booking-service/src/main/java/com/seatlock/booking/domain/BookingStatus.java` | Enum: `CONFIRMED`, `CANCELLED` |
 | `booking-service/src/main/java/com/seatlock/booking/domain/Hold.java` | JPA entity; `Persistable<UUID>` |
@@ -203,8 +204,9 @@
 | `venue-service/src/main/java/com/seatlock/venue/security/ServiceJwtAuthenticationFilter.java` | Validates service JWTs on `/api/v1/internal/**`; 401 on any failure |
 | `venue-service/src/main/java/com/seatlock/venue/security/JwtAuthenticationFilter.java` | Added `shouldNotFilter` to skip `/api/v1/internal/**` |
 | `venue-service/src/main/java/com/seatlock/venue/security/SecurityConfig.java` | Updated: `ROLE_SERVICE` required for `/internal/**`; added `ServiceJwtAuthenticationFilter` |
-| `venue-service/src/main/java/com/seatlock/venue/dto/InternalSlotResponse.java` | `{slotId, venueId, startTime, status}` response record |
-| `venue-service/src/main/java/com/seatlock/venue/controller/InternalSlotController.java` | `GET /api/v1/internal/slots?ids=...`; 404 if any ID missing |
+| `venue-service/src/main/java/com/seatlock/venue/dto/InternalSlotResponse.java` | `{slotId, venueId, venueName, startTime, status}` response record (venueName batch-fetched from VenueRepository) |
+| `venue-service/src/main/java/com/seatlock/venue/controller/InternalSlotController.java` | `GET /api/v1/internal/slots?ids=...`; batch-fetches venue names; 404 if any ID missing |
+| `venue-service/src/test/java/com/seatlock/venue/controller/InternalSlotControllerTest.java` | 5 unit tests: venueName included, null when venue missing, null when no venueId, SlotNotFoundException, multi-venue batch fetch |
 | `venue-service/src/main/java/com/seatlock/venue/exception/GlobalExceptionHandler.java` | Added `SlotNotFoundException` handler → 404 SLOT_NOT_FOUND |
 | `venue-service/src/main/resources/application.yml` | Added `seatlock.service-jwt.secret` |
 | `venue-service/src/test/resources/application-test.yml` | Added `seatlock.service-jwt.secret` for tests |
@@ -216,7 +218,7 @@
 |------|---------|
 | `booking-service/src/main/java/com/seatlock/booking/dto/HoldRequest.java` | Validated request: `slotIds` list (not empty, elements not null) |
 | `booking-service/src/main/java/com/seatlock/booking/dto/HoldResponse.java` | Response: `sessionId`, `expiresAt`, `holds[]` (nested `HoldItemResponse`) |
-| `booking-service/src/main/java/com/seatlock/booking/client/InternalSlotResponse.java` | `{slotId, venueId, startTime, status}` record from venue-service |
+| `booking-service/src/main/java/com/seatlock/booking/client/InternalSlotResponse.java` | `{slotId, venueId, venueName, startTime, status}` record from venue-service |
 | `booking-service/src/main/java/com/seatlock/booking/client/SlotVerificationClient.java` | `GET /api/v1/internal/slots?ids=...`; 404 → `SlotNotFoundException` |
 | `booking-service/src/main/java/com/seatlock/booking/redis/HoldPayload.java` | `{holdId, userId, sessionId, expiresAt}` record serialized to Redis |
 | `booking-service/src/main/java/com/seatlock/booking/redis/RedisHoldRepository.java` | `setnx` (NX EX 1800), `del`, `deleteSlotCache`; wraps `StringRedisTemplate` |
@@ -225,12 +227,12 @@
 | `booking-service/src/main/java/com/seatlock/booking/exception/SlotNotAvailableException.java` | → 409 SLOT_NOT_AVAILABLE + `unavailableSlotIds` list |
 | `booking-service/src/main/java/com/seatlock/booking/exception/RedisUnavailableException.java` | → 503 SERVICE_UNAVAILABLE |
 | `booking-service/src/main/java/com/seatlock/booking/exception/GlobalExceptionHandler.java` | `@RestControllerAdvice`; maps all domain exceptions to error codes |
-| `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java` | All 8 steps; `TransactionTemplate` scopes Postgres phase only |
+| `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java` | All 8 steps; `TransactionTemplate` scopes Postgres phase only; Step 6 upserts venue/slot metadata before UPDATE status |
 | `booking-service/src/main/java/com/seatlock/booking/controller/HoldController.java` | `POST /api/v1/holds`; validates Idempotency-Key header |
 | `booking-service/src/main/java/com/seatlock/booking/security/JwtAuthenticationFilter.java` | Updated: stores `userId` claim in `auth.setDetails()` |
 | `booking-service/src/main/java/com/seatlock/booking/repository/HoldRepository.java` | Added `findBySessionIdAndStatus(UUID, HoldStatus)` |
 | `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Updated: added `status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'` to stub `slots` table |
-| `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` | 4 unit tests: idempotency check, SETNX rollback, PG row-count mismatch, happy path |
+| `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` | 5 unit tests: idempotency check, SETNX rollback, PG row-count mismatch, Redis connection failure, happy path |
 | `booking-service/src/integrationTest/java/com/seatlock/booking/controller/HoldControllerIT.java` | 5 ITs: happy path (Redis TTL + PG state), 400, 409 SETNX fail, 409 PG mismatch, idempotent replay, concurrency (10 threads → 1 wins) |
 
 ### Stage 8 — booking-service: Booking Confirmation
@@ -277,6 +279,8 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 11 | notification-service | SQS consumer, email/SMS dispatch, ElasticMQ in Docker Compose | COMPLETE |
 | 12 | Resilience | Redis 503 degraded mode, Vault fail-fast, circuit breaker, retries | COMPLETE |
 | 13 | API Documentation (Swagger UI) | springdoc-openapi, Bearer JWT auth, interactive UI per service | COMPLETE |
+| — | Maintenance: cross-service DB integrity | V3 migration (local venues/slots), InternalSlotResponse venueName, write-through upsert in HoldService | COMPLETE |
+| — | Maintenance: venue_db slot status write gap | Second JdbcTemplate (venueJdbcTemplate) wired to venue_db; best-effort slot status UPDATE in all 4 write paths | COMPLETE |
 | 14 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | NOT STARTED |
 | 15 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | NOT STARTED |
 | 16 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | NOT STARTED |
@@ -337,6 +341,42 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | `booking-service/.../exception/GlobalExceptionHandler.java` | Added `VenueServiceUnavailableException` → 503 handler |
 | `booking-service/.../service/HoldServiceTest.java` | Added: Redis connection failure → RedisUnavailableException + cleanup test |
 | `booking-service/.../controller/HoldControllerIT.java` | Added: circuit breaker fallback → 503 test |
+
+### Maintenance — Cross-Service DB Integrity (between Stages 13–14)
+
+| File | Purpose |
+|------|---------|
+| `booking-service/src/main/resources/db/migration/V3__create_local_tables.sql` | New migration: local `venues` + `slots` tables in `booking_db`; FK `slots.venue_id → venues.venue_id` within same DB |
+| `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` | Updated: removed venues + slots stubs (now V3 with `IF NOT EXISTS`); kept `users` stub only |
+| `booking-service/src/main/resources/db/migration/V1__create_holds.sql` | Updated: removed `REFERENCES users(user_id)` and `REFERENCES slots(slot_id)` cross-DB FK constraints |
+| `booking-service/src/main/resources/db/migration/V2__create_bookings.sql` | Updated: removed cross-DB FK constraints; `hold_id` FK to `holds` kept (same DB) |
+| `venue-service/src/main/java/com/seatlock/venue/dto/InternalSlotResponse.java` | Updated: added `venueName` field |
+| `venue-service/src/main/java/com/seatlock/venue/controller/InternalSlotController.java` | Updated: injected `VenueRepository`; batch-fetches venue names using `findAllById(Set<UUID>)` |
+| `venue-service/src/test/java/com/seatlock/venue/controller/InternalSlotControllerTest.java` | New: 5 unit tests for venueName logic and SlotNotFoundException |
+| `booking-service/src/main/java/com/seatlock/booking/client/InternalSlotResponse.java` | Updated: added `venueName` field |
+| `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java` | Updated: Step 6 upserts venue/slot metadata (write-through); `java.sql.Timestamp.from()` for TIMESTAMPTZ |
+| `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` | Updated: added `nullVenueId_slotWithoutVenue_holdCreatedSuccessfully` test; fixed PSP with `lenient()` |
+| `booking-service/src/integrationTest/…/controller/HoldControllerIT.java` | Updated: `InternalSlotResponse` mocks include venueName; DELETE order includes venues |
+| `booking-service/src/integrationTest/…/controller/BookingControllerIT.java` | Updated: same venueName + delete order fixes |
+| `booking-service/src/integrationTest/…/controller/CancellationControllerIT.java` | Updated: same venueName + delete order fixes |
+
+### Maintenance — venue_db Slot Status Write Gap (between Stages 13–14, session 2)
+
+| File | Purpose |
+|------|---------|
+| `booking-service/src/main/java/com/seatlock/booking/config/VenueDbConfig.java` | New: `@Bean("venueJdbcTemplate")` — second `JdbcTemplate` wired to `venue_db` datasource |
+| `booking-service/src/main/resources/application.yml` | Updated: added `seatlock.venue-datasource.url/username/password` |
+| `booking-service/src/integrationTest/…/AbstractIntegrationTest.java` | Updated: wires `seatlock.venue-datasource.*` to same Testcontainer Postgres |
+| `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java` | Updated: injects `venueJdbcTemplate`; calls `updateSlotStatusInVenueDb("HELD", …)` after booking_db tx |
+| `booking-service/src/main/java/com/seatlock/booking/service/BookingService.java` | Updated: injects `venueJdbcTemplate`; calls `updateSlotStatusInVenueDb("BOOKED", …)` after booking_db tx |
+| `booking-service/src/main/java/com/seatlock/booking/service/CancellationService.java` | Updated: injects `venueJdbcTemplate`; calls `updateSlotStatusInVenueDb("AVAILABLE", …)` after booking_db tx |
+| `booking-service/src/main/java/com/seatlock/booking/service/HoldExpiryJob.java` | Updated: injects `venueJdbcTemplate`; best-effort UPDATE AVAILABLE in venue_db after expiry tx |
+| `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` | Updated: added `@Mock venueJdbcTemplate`; added `venueDbUpdateFails_holdStillSucceeds` test |
+| `booking-service/src/test/java/com/seatlock/booking/service/BookingServiceTest.java` | Updated: added `@Mock venueJdbcTemplate` to constructor |
+| `booking-service/src/test/java/com/seatlock/booking/service/CancellationServiceTest.java` | Updated: added `@Mock venueJdbcTemplate` to constructor |
+| `booking-service/src/test/java/com/seatlock/booking/service/HoldExpiryJobTest.java` | Updated: added `@Mock venueJdbcTemplate` to constructor |
+| `docs/BUGS.md` | Updated: cross-DB gap marked FIXED; `@MockitoBean` type-replacement bug documented |
+| `docs/CONTEXT.md` | Updated: Phase 0 Compromises row expanded; new implementation decisions added |
 
 ---
 

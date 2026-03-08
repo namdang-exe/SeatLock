@@ -4,6 +4,174 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-07] Spring `@MockitoBean` replaces ALL beans of matching type, not just by name
+
+**Stage:** Maintenance — venue_db slot status write gap (session 2)
+
+**Symptom:**
+Adding `@MockitoBean(name = "venueJdbcTemplate") JdbcTemplate venueJdbcTemplate` to `HoldControllerIT`
+caused all existing tests to fail with 409 CONFLICT (hold requests rejected). The new failure test returned
+500 instead of the expected 200.
+
+**Root cause:**
+Spring's `@MockitoBean` resolves beans **by type first**, then registers the mock under the given name.
+When there are two `JdbcTemplate` beans (primary auto-configured + `venueJdbcTemplate`), `@MockitoBean`
+replaces **both** with the same Mockito mock. The primary `jdbcTemplate` inside the booking_db transaction
+then returned `0` for `UPDATE slots SET status = 'HELD'` → row count mismatch → `SlotNotAvailableException`
+→ 409.
+
+**Fix:**
+Do not use `@MockitoBean` when multiple beans of the same type exist in the context. Move the non-fatal
+failure test to the unit test layer (`HoldServiceTest`) where the two `JdbcTemplate` mocks are separate
+`@Mock`-annotated fields injected directly into the service constructor — no Spring context involved.
+
+**Rule going forward:**
+`@MockitoBean` is type-based. If you have two beans of the same class, only use `@MockitoBean` when you
+want ALL of them replaced. For selective mocking, use unit tests with manual mock injection.
+
+**Files changed:**
+- `booking-service/src/integrationTest/…/controller/HoldControllerIT.java` — `@MockitoBean venueJdbcTemplate` removed
+- `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` — `venueDbUpdateFails_holdStillSucceeds` added
+
+---
+
+## [FIXED — Phase 1] booking-service does not update venue_db slots.status on hold creation
+
+**Stage:** Phase 0 known gap — to fix before Stage 15 (Frontend) at the latest.
+
+**Symptom:**
+`POST /api/v1/holds` creates a hold row in booking_db and updates the local mirror
+`slots` table in booking_db, but the canonical `slots` table in **venue_db** is never
+updated. On a Redis cache miss, venue-service reads venue_db and returns `AVAILABLE`
+for a slot that is actually `HELD`.
+
+**Root cause:**
+ADR-006 intended booking-service to write `slots.status` in the shared Postgres cluster.
+In practice, booking-service's `JdbcTemplate` is wired to `booking_db` only, so it can
+never reach venue_db. The `UPDATE slots SET status = 'HELD'` in `HoldService` Step 6
+only affects the local booking_db mirror, not the canonical table.
+
+**Impact:**
+- Double-booking: **not possible** — Redis SETNX is the primary gate and is unaffected.
+- Stale browse results on cache miss: users may see `AVAILABLE` for a held slot until
+  either the cache TTL expires (5s) or the slot's Redis key expires (30 min).
+
+**Fix (TODO — Phase 1):**
+Give booking-service a second `JdbcTemplate` / `DataSource` bean wired to venue_db's
+datasource and use it specifically for the `UPDATE slots SET status = 'HELD'` (hold
+creation) and `UPDATE slots SET status = 'AVAILABLE'/'BOOKED'` (confirm / cancel /
+expiry job). All four write paths in HoldService, BookingService, CancellationService,
+and HoldExpiryJob need updating.
+Works on both local (single Postgres container, multiple DBs) and AWS production
+(single RDS instance, multiple DBs) — same host, different database.
+
+**Permanent fix (Phase 2 — service boundary redesign):**
+The root cause is that `slots` is split across two service boundaries. The clean solution
+is to consolidate ownership:
+- **venue-service** owns only venue *definitions* (`venues` table: name, address, city,
+  state, status). It becomes a pure reference-data service.
+- **booking-service** owns `slots` entirely — table moves to `booking_db`, slot
+  generation endpoint moves to booking-service, all status transitions (AVAILABLE →
+  HELD → BOOKED → AVAILABLE) happen in one service against one DB with no cross-service
+  writes.
+- `GET /api/v1/venues/{venueId}/slots` either moves to booking-service or venue-service
+  proxies it via an internal call.
+This eliminates the cross-DB write problem permanently and gives each service true
+autonomy over its data. Requires a migration plan to move the `slots` table and update
+the ALB routing rules.
+
+---
+
+## [2026-03-07] Mockito PotentialStubbingProblem: anyList() does not match Set argument
+
+**Stage:** Maintenance — cross-service DB integrity (between Stages 13–14)
+
+**Symptom:**
+`InternalSlotControllerTest` tests for `venueName` fail with:
+```
+PotentialStubbingProblem: this stubbing was never used
+  -> when(venueRepository.findAllById(anyList())).thenReturn(...)
+```
+
+**Root cause:**
+`anyList()` matches only `java.util.List` instances. `InternalSlotController.getSlotsByIds()` collects venue IDs into a `Set<UUID>` via `Collectors.toSet()` before calling `venueRepository.findAllById(venueIds)`. When Mockito sees an actual `Set` argument against an `anyList()` stub, strict mode treats the stub as unused.
+
+**Fix:**
+Use `any()` (unconstrained matcher) instead of `anyList()`:
+```java
+when(venueRepository.findAllById(any())).thenReturn(List.of(venue));
+```
+
+**Files changed:**
+- `venue-service/src/test/java/com/seatlock/venue/controller/InternalSlotControllerTest.java` — 4 stubs changed from `anyList()` to `any()`
+
+**Rule going forward:**
+When stubbing `findAllById(Iterable)` or any method receiving a `Set`, use `any()` not `anyList()`. Use `anyList()` only when the actual runtime argument is definitely a `List`.
+
+---
+
+## [2026-03-07] PSQLException: Can't infer SQL type for java.time.Instant in JdbcTemplate
+
+**Stage:** Maintenance — cross-service DB integrity (between Stages 13–14)
+
+**Symptom:**
+Integration tests fail with:
+```
+PSQLException: Can't infer the SQL type to use for an instance of java.time.Instant.
+Use setObject() with an explicit Types value to specify the type to use.
+```
+
+**Root cause:**
+`jdbcTemplate.update("INSERT INTO slots (slot_id, venue_id, status, start_time) VALUES (?, ?, 'AVAILABLE', ?)", slot.slotId(), slot.venueId(), slot.startTime())` passes a raw `java.time.Instant` as the 3rd parameter. PostgreSQL JDBC driver 42.7.5 calls `ps.setObject(index, instant)` but cannot infer an SQL type from a plain `Instant` object.
+
+**Fix:**
+Convert `Instant` to `java.sql.Timestamp` before passing to JdbcTemplate:
+```java
+java.sql.Timestamp startTime = slot.startTime() != null
+        ? java.sql.Timestamp.from(slot.startTime()) : null;
+jdbcTemplate.update("INSERT INTO slots ... VALUES (?, ?, 'AVAILABLE', ?)",
+        slot.slotId(), slot.venueId(), startTime);
+```
+
+**Files changed:**
+- `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java`
+
+**Rule going forward:**
+Whenever passing a temporal value to `JdbcTemplate.update(String, Object...)`, always convert `Instant` → `java.sql.Timestamp.from()` and `LocalDate` → `java.sql.Date.valueOf()`. The JDBC driver cannot auto-detect types from java.time objects via `setObject()`.
+
+---
+
+## [2026-03-07] Flyway cross-database FK constraint — booking_db cannot reference user_db or venue_db
+
+**Stage:** Maintenance — cross-service DB integrity (between Stages 13–14)
+
+**Symptom:**
+booking-service fails to start locally with Flyway error:
+```
+ERROR: relation "users" does not exist
+```
+`V1__create_holds.sql` contained `REFERENCES users(user_id)` and `REFERENCES slots(slot_id)`, but in the local Docker Compose setup each service has its own separate database. `booking_db` has no `users` or `slots` tables.
+
+**Root cause:**
+PostgreSQL does not support cross-database foreign key constraints. The design doc's Phase 0 compromise ("shared Postgres cluster") means the databases are logically separate schemas/databases on the same cluster, not a single database. Flyway runs migrations against `booking_db` only; `users` and `slots` live in `user_db` and `venue_db` respectively.
+
+**Fix:**
+1. Remove cross-DB FK constraints from `V1__create_holds.sql` and `V2__create_bookings.sql` — `user_id` and `slot_id` become plain `UUID NOT NULL` columns.
+2. Create `V3__create_local_tables.sql` with booking-service's own `venues` and `slots` tables in `booking_db` (within-DB FK `slots.venue_id → venues.venue_id` is safe).
+3. Enforce referential integrity at the application layer: upsert venue/slot metadata in `HoldService.createHold()` Step 6 before the `UPDATE slots SET status = 'HELD'`.
+
+**Files changed:**
+- `booking-service/src/main/resources/db/migration/V1__create_holds.sql` — removed `REFERENCES users(user_id)`, `REFERENCES slots(slot_id)`
+- `booking-service/src/main/resources/db/migration/V2__create_bookings.sql` — removed cross-DB FK constraints
+- `booking-service/src/main/resources/db/migration/V3__create_local_tables.sql` (new)
+- `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` — removed venues/slots stubs (now V3)
+- `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java` — added upsert in Step 6
+
+**Rule going forward:**
+PostgreSQL FKs can only reference tables in the same database. For cross-service data (user_id, slot_id), store the UUID as a plain NOT NULL column and enforce integrity at the application layer with write-through upserts or event-driven sync.
+
+---
+
 ## [2026-03-06] Spring Cloud BOM 2025.0.0 rejects Spring Boot 3.5.0 — CompatibilityVerifier failure
 
 **Stage:** 12 (Resilience + Vault)

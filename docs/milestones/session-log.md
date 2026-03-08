@@ -5,6 +5,131 @@
 
 ---
 
+## Session 2026-03-07 (session 2) — Maintenance: venue_db Slot Status Write Gap
+
+**Phase:** 1 — Foundation (between Stages 13 and 14)
+**Started at:** Investigation of hold endpoint not updating `slots` table in venue_db
+**Ended at:** Maintenance COMPLETE. Stage 14 (Observability) is next.
+
+### What Was Accomplished
+
+**Root problem fixed:** `POST /api/v1/holds` created holds in `booking_db.holds` and wrote slot status to `booking_db.slots` (local mirror), but never updated the canonical `venue_db.slots` table. Browse queries hitting venue-service returned stale `AVAILABLE` status for held/booked seats.
+
+**Second DataSource added to booking-service (Phase 1 fix):**
+
+- Created `VenueDbConfig.java` — `@Bean("venueJdbcTemplate")` wired to `venue_db` via `@Value`-injected JDBC properties (`seatlock.venue-datasource.*`)
+- Added `seatlock.venue-datasource` block to `application.yml` (localhost defaults) and `AbstractIntegrationTest` (points to same Testcontainer DB)
+- Updated `HoldService`, `BookingService`, `CancellationService`, `HoldExpiryJob` — all inject `@Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate` and call `updateSlotStatusInVenueDb(...)` after each booking_db transaction commits
+- All venue_db writes are **best-effort**: failures caught, logged at WARN, swallowed — Redis SETNX remains the true double-booking gate
+
+**Key discovery — `@MockitoBean` replaces by type, not by name:**
+
+- Attempted to add `@MockitoBean(name = "venueJdbcTemplate") JdbcTemplate` to `HoldControllerIT` — Spring replaced BOTH `JdbcTemplate` beans with the same mock; booking_db UPDATE returned 0 rows → 409 CONFLICT on happy path
+- Fix: removed `@MockitoBean venueJdbcTemplate` from IT entirely; moved the venue_db failure scenario (`venueDbUpdateFails_holdStillSucceeds`) to `HoldServiceTest` (unit level) where two separate `@Mock JdbcTemplate` fields are cleanly independent
+
+**Tests updated:** `HoldServiceTest`, `BookingServiceTest`, `CancellationServiceTest`, `HoldExpiryJobTest` — all constructors updated to pass `venueJdbcTemplate`. New test: `venueDbUpdateFails_holdStillSucceeds`.
+
+**All tests passed:** `./gradlew :booking-service:test :booking-service:integrationTest` — BUILD SUCCESSFUL.
+
+### Decisions Made
+
+1. **Second JdbcTemplate over venue-service API call** — simpler, no service JWT round-trip on hot path, works identically on local (single Postgres container) and AWS production (single RDS instance, multiple databases on same host)
+2. **Best-effort write** — venue_db slot status update is non-transactional and fire-and-forget; correctness guaranteed by Redis SETNX
+3. **Phase 2 permanent fix noted in BUGS.md** — move `slots` table entirely to `booking_db`; venue-service keeps only `venues`; eliminates cross-DB writes permanently
+4. **@MockitoBean rule** — do not use `@MockitoBean` when multiple beans of the same class exist in context; use unit tests with manual mock injection
+
+### Files Modified
+
+- `booking-service/src/main/java/com/seatlock/booking/config/VenueDbConfig.java` (NEW)
+- `booking-service/src/main/resources/application.yml`
+- `booking-service/src/integrationTest/java/.../AbstractIntegrationTest.java`
+- `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java`
+- `booking-service/src/main/java/com/seatlock/booking/service/BookingService.java`
+- `booking-service/src/main/java/com/seatlock/booking/service/CancellationService.java`
+- `booking-service/src/main/java/com/seatlock/booking/service/HoldExpiryJob.java`
+- `booking-service/src/test/java/.../HoldServiceTest.java`
+- `booking-service/src/test/java/.../BookingServiceTest.java`
+- `booking-service/src/test/java/.../CancellationServiceTest.java`
+- `booking-service/src/test/java/.../HoldExpiryJobTest.java`
+- `docs/BUGS.md`
+- `docs/CONTEXT.md`
+- `docs/CODING_PLAN.md`
+- `docs/INDEX.md`
+
+### Next Session
+
+Begin **Stage 14 — Observability**: Prometheus + Grafana in Docker Compose, Actuator full exposure on all 4 services, 7 custom Micrometer metrics in booking-service and venue-service, Grafana dashboard JSON.
+
+---
+
+## Session 2026-03-07 — Maintenance: Cross-Service DB Integrity
+
+**Phase:** 1 — Foundation (between Stages 13 and 14)
+**Started at:** Maintenance (booking-service local startup failure — Flyway FK error)
+**Ended at:** Maintenance COMPLETE. Stage 14 (Observability) is next.
+
+### What Was Accomplished
+
+**Root problem fixed:** booking-service failed to start locally because `V1__create_holds.sql` referenced `users(user_id)` and `slots(slot_id)` from other databases — PostgreSQL does not support cross-database FK constraints.
+
+**Cross-service referential integrity implemented at the application layer:**
+
+- Removed cross-DB FK constraints from `V1__create_holds.sql` and `V2__create_bookings.sql` (`user_id`, `slot_id` now plain `UUID NOT NULL`)
+- Created `V3__create_local_tables.sql` — booking-service's own `venues` + `slots` tables with within-DB FK (`slots.venue_id → venues.venue_id`)
+- Updated `V0__create_stub_tables.sql` (test-only) — removed `venues` + `slots` stubs; kept `users` only; V3 uses `CREATE TABLE IF NOT EXISTS` for idempotency
+- Added `venueName` field to `InternalSlotResponse` in both venue-service and booking-service
+- Updated `InternalSlotController` (venue-service) to inject `VenueRepository` and batch-fetch venue names via `findAllById(Set<UUID>)`
+- Updated `HoldService.createHold()` Step 6: upserts venue metadata then slot metadata (FK-safe order) before `UPDATE slots SET status = 'HELD'`; uses `java.sql.Timestamp.from(Instant)` for TIMESTAMPTZ parameters
+
+**Tests added:**
+- `InternalSlotControllerTest` (venue-service) — 5 new unit tests: venueName included, null when venue missing, null when no venueId, `SlotNotFoundException`, multi-venue batch fetch
+- `HoldServiceTest.nullVenueId_slotWithoutVenue_holdCreatedSuccessfully` — verifies hold is created even when slot has no venueId (venue upsert skipped, slot upsert proceeds)
+
+**Tests fixed:**
+- All three IT classes (`HoldControllerIT`, `BookingControllerIT`, `CancellationControllerIT`) — updated `InternalSlotResponse` mock constructors to include `venueName`; added `DELETE FROM venues` to setUp cleanup (FK-safe order: bookings → holds → slots → venues → users)
+- `HoldServiceTest.postgresRowCountMismatch` — changed PSC stub to `lenient()` to suppress `PotentialStubbingProblem` caused by new upsert calls
+- `InternalSlotControllerTest` — changed `anyList()` to `any()` on `venueRepository.findAllById()` stubs (actual arg is `Set<UUID>`, not `List`)
+
+### Key Decisions Made
+
+- **Application-layer referential integrity** (not distributed FK, not saga) — simplest approach at current scale; upsert in the same transaction as hold creation guarantees consistency
+- **Venue upsert before slot upsert** — within-DB FK `slots.venue_id → venues.venue_id` requires venues to exist first
+- **`ON CONFLICT DO UPDATE SET`** (not `DO NOTHING`) — keeps venue name and slot metadata current if venue-service data changes
+- **`CREATE TABLE IF NOT EXISTS`** in V3 — idempotent with V0 test migration (V0 runs before V3 in test classpath; both can co-exist without conflict)
+- **`java.sql.Timestamp.from(Instant)`** — PostgreSQL JDBC driver 42.7.5 cannot infer SQL type from raw `java.time.Instant` via `setObject()`; explicit conversion required
+
+### Bugs Found and Fixed
+
+1. **Flyway cross-DB FK failure** — `V1__create_holds.sql` referencing users/slots in different DBs (see BUGS.md)
+2. **PSQLException: Can't infer SQL type for Instant** — fixed by `java.sql.Timestamp.from()` conversion (see BUGS.md)
+3. **Mockito PotentialStubbingProblem: `anyList()` vs `any()`** — `findAllById()` receives `Set<UUID>`, not `List` (see BUGS.md)
+
+### Files Modified
+
+- `booking-service/src/main/resources/db/migration/V1__create_holds.sql` — cross-DB FKs removed
+- `booking-service/src/main/resources/db/migration/V2__create_bookings.sql` — cross-DB FKs removed
+- `booking-service/src/main/resources/db/migration/V3__create_local_tables.sql` (new)
+- `booking-service/src/test/resources/db/migration/V0__create_stub_tables.sql` — venues/slots stubs removed
+- `venue-service/src/main/java/com/seatlock/venue/dto/InternalSlotResponse.java` — venueName added
+- `venue-service/src/main/java/com/seatlock/venue/controller/InternalSlotController.java` — VenueRepository injected, batch fetch
+- `venue-service/src/test/java/com/seatlock/venue/controller/InternalSlotControllerTest.java` (new)
+- `booking-service/src/main/java/com/seatlock/booking/client/InternalSlotResponse.java` — venueName added
+- `booking-service/src/main/java/com/seatlock/booking/service/HoldService.java` — Step 6 upserts
+- `booking-service/src/test/java/com/seatlock/booking/service/HoldServiceTest.java` — new test + lenient() fixes
+- `booking-service/src/integrationTest/…/controller/HoldControllerIT.java` — venueName mocks + delete order
+- `booking-service/src/integrationTest/…/controller/BookingControllerIT.java` — venueName mocks + delete order
+- `booking-service/src/integrationTest/…/controller/CancellationControllerIT.java` — venueName mocks + delete order
+- `docs/CODING_PLAN.md` — maintenance stage row + full section added
+- `docs/CONTEXT.md` — phase status + 6 new implementation decisions
+- `docs/INDEX.md` — maintenance row + file tables updated
+- `docs/BUGS.md` — 3 new bugs documented
+
+### Continue Next Session From
+
+Stage 14 — first NOT STARTED stage in `docs/CODING_PLAN.md`. Feed CONTEXT.md + INDEX.md + CODING_PLAN.md + open-questions.md at session start as usual.
+
+---
+
 ## Session 2026-03-06 — Stage 12: Resilience + Vault
 
 **Phase:** 1 — Foundation

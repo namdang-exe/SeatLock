@@ -55,10 +55,11 @@ class HoldControllerIT extends AbstractIntegrationTest {
         slotId  = UUID.randomUUID();
         venueId = UUID.randomUUID();
 
-        // Clean up before each test — FK-safe order: bookings → holds → slots → users
+        // Clean up before each test — FK-safe order: bookings → holds → slots → venues → users
         jdbcTemplate.execute("DELETE FROM bookings");
         jdbcTemplate.execute("DELETE FROM holds");
         jdbcTemplate.execute("DELETE FROM slots");
+        jdbcTemplate.execute("DELETE FROM venues");
         jdbcTemplate.execute("DELETE FROM users");
 
         // Insert test user and slot
@@ -68,7 +69,7 @@ class HoldControllerIT extends AbstractIntegrationTest {
         // Default mock: slot exists
         when(slotVerificationClient.verify(anyList()))
                 .thenReturn(List.of(new InternalSlotResponse(
-                        slotId, venueId,
+                        slotId, venueId, "Test Venue",
                         Instant.now().plus(1, ChronoUnit.HOURS),
                         "AVAILABLE")));
     }

@@ -18,6 +18,9 @@ import com.seatlock.booking.redis.HoldPayload;
 import com.seatlock.booking.redis.RedisHoldRepository;
 import com.seatlock.booking.repository.BookingRepository;
 import com.seatlock.booking.repository.HoldRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -33,11 +36,14 @@ import java.util.stream.Collectors;
 @Service
 public class BookingService {
 
+    private static final Logger log = LoggerFactory.getLogger(BookingService.class);
+
     private final BookingRepository bookingRepository;
     private final HoldRepository holdRepository;
     private final RedisHoldRepository redisHoldRepository;
     private final SlotVerificationClient slotVerificationClient;
     private final JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate venueJdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final ConfirmationNumberGenerator confirmationNumberGenerator;
     private final BookingEventPublisher eventPublisher;
@@ -47,6 +53,7 @@ public class BookingService {
                           RedisHoldRepository redisHoldRepository,
                           SlotVerificationClient slotVerificationClient,
                           JdbcTemplate jdbcTemplate,
+                          @Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate,
                           PlatformTransactionManager txManager,
                           ConfirmationNumberGenerator confirmationNumberGenerator,
                           BookingEventPublisher eventPublisher) {
@@ -55,6 +62,7 @@ public class BookingService {
         this.redisHoldRepository = redisHoldRepository;
         this.slotVerificationClient = slotVerificationClient;
         this.jdbcTemplate = jdbcTemplate;
+        this.venueJdbcTemplate = venueJdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(txManager);
         this.confirmationNumberGenerator = confirmationNumberGenerator;
         this.eventPublisher = eventPublisher;
@@ -133,11 +141,14 @@ public class BookingService {
             return null;
         });
 
-        // Step 6: Redis cleanup — AFTER Postgres commit (best-effort)
+        // Step 6: Update slot status in venue_db — best-effort (non-fatal)
+        updateSlotStatusInVenueDb("BOOKED", slotIds);
+
+        // Step 7: Redis cleanup — AFTER Postgres commit (best-effort)
         slotIds.forEach(redisHoldRepository::del);
         invalidateSlotCaches(verifiedSlots);
 
-        // Step 7: Publish event (async, non-blocking stub — SQS wired in Stage 11)
+        // Step 8: Publish event (async, non-blocking stub — SQS wired in Stage 11)
         try {
             eventPublisher.publishBookingConfirmed(
                     new BookingConfirmedEvent(confirmationNumber, sessionId, userId, slotIds, Instant.now()));
@@ -145,8 +156,23 @@ public class BookingService {
             // Event publishing failure must not affect booking confirmation response
         }
 
-        // Step 8: Return 201
+        // Step 9: Return 201
         return toResponse(confirmationNumber, sessionId, bookings);
+    }
+
+    private void updateSlotStatusInVenueDb(String newStatus, List<UUID> slotIds) {
+        try {
+            UUID[] arr = slotIds.toArray(new UUID[0]);
+            venueJdbcTemplate.update(conn -> {
+                var ps = conn.prepareStatement(
+                        "UPDATE slots SET status = ? WHERE slot_id = ANY(?)");
+                ps.setString(1, newStatus);
+                ps.setArray(2, conn.createArrayOf("uuid", arr));
+                return ps;
+            });
+        } catch (Exception e) {
+            log.warn("Failed to update slot status to {} in venue_db (non-fatal): {}", newStatus, e.getMessage());
+        }
     }
 
     private void invalidateSlotCaches(List<InternalSlotResponse> verifiedSlots) {

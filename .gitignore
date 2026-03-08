@@ -22,3 +22,4 @@ build/
 .env
 *.env.local
 note.md
+start-local-services.ps1

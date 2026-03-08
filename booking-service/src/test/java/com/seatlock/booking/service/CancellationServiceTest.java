@@ -39,6 +39,7 @@ import static org.mockito.Mockito.when;
 class CancellationServiceTest {
 
     @Mock JdbcTemplate jdbcTemplate;
+    @Mock JdbcTemplate venueJdbcTemplate;
     @Mock PlatformTransactionManager txManager;
     @Mock RedisHoldRepository redisHoldRepository;
     @Mock BookingEventPublisher eventPublisher;
@@ -54,7 +55,7 @@ class CancellationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CancellationService(jdbcTemplate, txManager, redisHoldRepository, eventPublisher);
+        service = new CancellationService(jdbcTemplate, venueJdbcTemplate, txManager, redisHoldRepository, eventPublisher);
 
         lenient().when(txManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());
@@ -156,6 +157,24 @@ class CancellationServiceTest {
         verify(eventPublisher).publishBookingCancelled(captor.capture());
         assertThat(captor.getValue().confirmationNumber()).isEqualTo(confirmationNumber);
         assertThat(captor.getValue().cancelledSlotIds()).containsExactly(slotId);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void nullStartTime_treatedAsWindowClosed_throwsCancellationWindowClosedException() {
+        // A confirmed booking whose slot has no startTime — treated conservatively as
+        // window closed rather than allowing an unverifiable cancellation.
+        CancellationService.BookingWithSlot booking = new CancellationService.BookingWithSlot(
+                UUID.randomUUID(), sessionId, confirmationNumber,
+                userId, slotId, holdId, "CONFIRMED",
+                Instant.now().minusSeconds(3600), null,
+                null, venueId);
+
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(String.class)))
+                .thenReturn(List.of(booking));
+
+        assertThatThrownBy(() -> service.cancel(confirmationNumber, userId))
+                .isInstanceOf(CancellationWindowClosedException.class);
     }
 
     // --- helpers ---

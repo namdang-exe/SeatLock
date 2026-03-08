@@ -46,6 +46,7 @@ class HoldServiceTest {
     @Mock RedisHoldRepository redisHoldRepository;
     @Mock SlotVerificationClient slotVerificationClient;
     @Mock JdbcTemplate jdbcTemplate;
+    @Mock JdbcTemplate venueJdbcTemplate;
     @Mock PlatformTransactionManager txManager;
 
     HoldService holdService;
@@ -59,7 +60,7 @@ class HoldServiceTest {
     @BeforeEach
     void setUp() {
         holdService = new HoldService(holdRepository, redisHoldRepository,
-                slotVerificationClient, jdbcTemplate, txManager);
+                slotVerificationClient, jdbcTemplate, venueJdbcTemplate, txManager);
 
         // Default: txManager provides a usable TransactionStatus so the callback executes
         lenient().when(txManager.getTransaction(any(TransactionDefinition.class)))
@@ -121,7 +122,8 @@ class HoldServiceTest {
                         slotResponse(slotId2, venueId)));
         when(redisHoldRepository.setnx(any(UUID.class), any(HoldPayload.class))).thenReturn(true);
         // Postgres UPDATE affects only 1 row instead of 2
-        when(jdbcTemplate.update(any(PreparedStatementCreator.class))).thenReturn(1);
+        // lenient: upsert calls (String, Object...) don't match PSC stub — suppress PotentialStubbingProblem
+        lenient().when(jdbcTemplate.update(any(PreparedStatementCreator.class))).thenReturn(1);
 
         assertThatThrownBy(() -> holdService.createHold(userId, List.of(slotId1, slotId2), sessionId))
                 .isInstanceOf(SlotNotAvailableException.class);
@@ -174,6 +176,49 @@ class HoldServiceTest {
                 .containsExactlyInAnyOrder(slotId1, slotId2);
     }
 
+    @Test
+    void venueDbUpdateFails_holdStillSucceeds() {
+        // venue_db update throws — the try/catch in updateSlotStatusInVenueDb must swallow it.
+        // Redis SETNX + booking_db transaction already committed; the response must be 200.
+        when(holdRepository.findBySessionIdAndStatus(sessionId, HoldStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(slotVerificationClient.verify(anyList()))
+                .thenReturn(List.of(slotResponse(slotId1, venueId)));
+        when(redisHoldRepository.setnx(any(UUID.class), any(HoldPayload.class))).thenReturn(true);
+        when(holdRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(jdbcTemplate.update(any(PreparedStatementCreator.class))).thenReturn(1);
+        when(venueJdbcTemplate.update(any(PreparedStatementCreator.class)))
+                .thenThrow(new DataAccessResourceFailureException("venue_db unreachable"));
+
+        HoldResponse response = holdService.createHold(userId, List.of(slotId1), sessionId);
+
+        assertThat(response.holds()).hasSize(1);
+        assertThat(response.holds().get(0).slotId()).isEqualTo(slotId1);
+    }
+
+    @Test
+    void nullVenueId_slotWithoutVenue_holdCreatedSuccessfully() {
+        // Slots occasionally arrive without a venueId — the null guard must skip the venue
+        // upsert while still creating the hold.
+        InternalSlotResponse slotWithoutVenue = new InternalSlotResponse(
+                slotId1, null, null, Instant.now().plusSeconds(3600), "AVAILABLE");
+
+        when(holdRepository.findBySessionIdAndStatus(sessionId, HoldStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(slotVerificationClient.verify(anyList()))
+                .thenReturn(List.of(slotWithoutVenue));
+        when(redisHoldRepository.setnx(any(UUID.class), any(HoldPayload.class))).thenReturn(true);
+        when(holdRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        // 1 slot → UPDATE must return 1 (setUp default returns 2, which would mismatch)
+        // lenient: upsert calls (String, Object...) don't match PSC stub — suppress PotentialStubbingProblem
+        lenient().when(jdbcTemplate.update(any(PreparedStatementCreator.class))).thenReturn(1);
+
+        HoldResponse response = holdService.createHold(userId, List.of(slotId1), sessionId);
+
+        assertThat(response.holds()).hasSize(1);
+        assertThat(response.holds().get(0).slotId()).isEqualTo(slotId1);
+    }
+
     // --- helpers ---
 
     private Hold holdWithSlot(UUID slotId, UUID sessionId, UUID userId) {
@@ -186,6 +231,6 @@ class HoldServiceTest {
     }
 
     private InternalSlotResponse slotResponse(UUID slotId, UUID venueId) {
-        return new InternalSlotResponse(slotId, venueId, Instant.now().plusSeconds(3600), "AVAILABLE");
+        return new InternalSlotResponse(slotId, venueId, "Test Venue", Instant.now().plusSeconds(3600), "AVAILABLE");
     }
 }
