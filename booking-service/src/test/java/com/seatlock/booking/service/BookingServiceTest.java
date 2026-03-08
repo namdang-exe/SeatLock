@@ -15,6 +15,7 @@ import com.seatlock.booking.redis.HoldPayload;
 import com.seatlock.booking.redis.RedisHoldRepository;
 import com.seatlock.booking.repository.BookingRepository;
 import com.seatlock.booking.repository.HoldRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -65,7 +66,7 @@ class BookingServiceTest {
     void setUp() {
         bookingService = new BookingService(bookingRepository, holdRepository, redisHoldRepository,
                 slotVerificationClient, jdbcTemplate, venueJdbcTemplate, txManager,
-                confirmationNumberGenerator, eventPublisher);
+                confirmationNumberGenerator, eventPublisher, new SimpleMeterRegistry());
 
         lenient().when(txManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());

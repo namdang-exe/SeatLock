@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
@@ -19,6 +20,19 @@ import javax.sql.DataSource;
  */
 @Configuration
 public class VenueDbConfig {
+
+    /**
+     * Explicitly declare the primary JdbcTemplate for booking_db.
+     * Required because venueJdbcTemplate below satisfies Spring Boot's
+     * @ConditionalOnMissingBean(JdbcOperations.class) check, which would
+     * otherwise suppress the auto-configured JdbcTemplate entirely —
+     * causing every unqualified JdbcTemplate injection to receive venueJdbcTemplate.
+     */
+    @Primary
+    @Bean("jdbcTemplate")
+    public JdbcTemplate bookingJdbcTemplate(DataSource dataSource) {
+        return new JdbcTemplate(dataSource);
+    }
 
     @Bean("venueJdbcTemplate")
     public JdbcTemplate venueJdbcTemplate(

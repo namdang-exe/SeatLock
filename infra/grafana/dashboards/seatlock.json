@@ -1,0 +1,90 @@
+{
+  "title": "SeatLock Overview",
+  "uid": "seatlock-overview",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Hold Rate (holds/min)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(seatlock_holds_created_total[1m])",
+          "legendFormat": "holds/min"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Booking Rate (bookings/min)",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(seatlock_bookings_confirmed_total[1m])",
+          "legendFormat": "confirmed/min"
+        },
+        {
+          "expr": "rate(seatlock_bookings_cancelled_total[1m])",
+          "legendFormat": "cancelled/min"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Availability Cache Hit Ratio",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(seatlock_availability_cache_hit_total[1m]) / (rate(seatlock_availability_cache_hit_total[1m]) + rate(seatlock_availability_cache_miss_total[1m]))",
+          "legendFormat": "hit ratio"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Hold Expiry Rate (holds/min)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(seatlock_holds_expired_total[1m])",
+          "legendFormat": "expired/min"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Expiry Batch Size (p50 / p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(seatlock_expiry_batch_size_bucket[5m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(seatlock_expiry_batch_size_bucket[5m]))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Service Health",
+      "type": "table",
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "up",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    }
+  ]
+}

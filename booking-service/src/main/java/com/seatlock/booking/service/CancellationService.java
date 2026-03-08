@@ -13,6 +13,8 @@ import com.seatlock.booking.exception.BookingNotFoundException;
 import com.seatlock.booking.exception.CancellationWindowClosedException;
 import com.seatlock.booking.exception.ForbiddenException;
 import com.seatlock.booking.redis.RedisHoldRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -45,6 +47,7 @@ public class CancellationService {
     private final TransactionTemplate transactionTemplate;
     private final RedisHoldRepository redisHoldRepository;
     private final BookingEventPublisher eventPublisher;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Internal projection of a booking joined with its slot data.
@@ -82,12 +85,14 @@ public class CancellationService {
                                @Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate,
                                PlatformTransactionManager txManager,
                                RedisHoldRepository redisHoldRepository,
-                               BookingEventPublisher eventPublisher) {
+                               BookingEventPublisher eventPublisher,
+                               MeterRegistry meterRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.venueJdbcTemplate = venueJdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(txManager);
         this.redisHoldRepository = redisHoldRepository;
         this.eventPublisher = eventPublisher;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -178,6 +183,11 @@ public class CancellationService {
         } catch (Exception ignored) {
             // Event publishing must not affect cancel response
         }
+
+        // Step 8b: Record metric
+        Counter.builder("seatlock.bookings.cancelled")
+                .register(meterRegistry)
+                .increment();
 
         // Step 9: Return 200 — build response from in-memory data, reflecting new CANCELLED state
         List<BookingWithSlot> updated = all.stream()

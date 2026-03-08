@@ -10,6 +10,7 @@ import com.seatlock.booking.exception.SlotNotAvailableException;
 import com.seatlock.booking.redis.HoldPayload;
 import com.seatlock.booking.redis.RedisHoldRepository;
 import com.seatlock.booking.repository.HoldRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,7 +61,8 @@ class HoldServiceTest {
     @BeforeEach
     void setUp() {
         holdService = new HoldService(holdRepository, redisHoldRepository,
-                slotVerificationClient, jdbcTemplate, venueJdbcTemplate, txManager);
+                slotVerificationClient, jdbcTemplate, venueJdbcTemplate, txManager,
+                new SimpleMeterRegistry());
 
         // Default: txManager provides a usable TransactionStatus so the callback executes
         lenient().when(txManager.getTransaction(any(TransactionDefinition.class)))

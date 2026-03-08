@@ -112,6 +112,7 @@ docker compose up -d
 
 Starts Postgres 15, Redis 7, Mailhog (email), and ElasticMQ (SQS) in the background.
 Verify with `docker compose ps` — all services should show `Up`.
+Close all docker with `docker compose down -v` when finished to free up resources.
 
 ### 2 — Start services (one terminal per service)
 
@@ -240,3 +241,8 @@ See docs/PROJECT_PLAN.md for full breakdown and current status.
 
 See docs/decisions/ for all ADRs.
 See docs/CONTEXT.md for a quick summary of every decision made.
+
+## Prometheus Metrics
+All services expose Prometheus metrics at `/actuator/prometheus` (e.g. http://localhost:8081/actuator/prometheus).
+You can view them in a browser or set up a local Prometheus instance to scrape and visualize them.
+http://localhost:3001

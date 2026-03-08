@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–13 complete, Stage 14 next |
-| Current implementation stage | Stage 14 — Observability |
+| Phase 1+ — Implementation | IN PROGRESS — Stages 1–14 complete, Stage 15 next |
+| Current implementation stage | Stage 15 — Frontend: Auth + Browse |
 
 ---
 
@@ -281,7 +281,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 13 | API Documentation (Swagger UI) | springdoc-openapi, Bearer JWT auth, interactive UI per service | COMPLETE |
 | — | Maintenance: cross-service DB integrity | V3 migration (local venues/slots), InternalSlotResponse venueName, write-through upsert in HoldService | COMPLETE |
 | — | Maintenance: venue_db slot status write gap | Second JdbcTemplate (venueJdbcTemplate) wired to venue_db; best-effort slot status UPDATE in all 4 write paths | COMPLETE |
-| 14 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | NOT STARTED |
+| 14 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | COMPLETE |
 | 15 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | NOT STARTED |
 | 16 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | NOT STARTED |
 | 17 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | NOT STARTED |

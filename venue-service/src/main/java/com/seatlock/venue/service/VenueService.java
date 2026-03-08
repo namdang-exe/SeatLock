@@ -12,6 +12,8 @@ import com.seatlock.venue.dto.VenueResponse;
 import com.seatlock.venue.exception.VenueNotFoundException;
 import com.seatlock.venue.repository.SlotRepository;
 import com.seatlock.venue.repository.VenueRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +34,7 @@ public class VenueService {
     private final SlotRepository slotRepository;
     private final SlotGenerationService slotGenerationService;
     private final SlotCacheService slotCacheService;
+    private final MeterRegistry meterRegistry;
 
     @Value("${seatlock.slot.duration-minutes:60}")
     private int slotDurationMinutes;
@@ -39,11 +42,13 @@ public class VenueService {
     public VenueService(VenueRepository venueRepository,
                         SlotRepository slotRepository,
                         SlotGenerationService slotGenerationService,
-                        SlotCacheService slotCacheService) {
+                        SlotCacheService slotCacheService,
+                        MeterRegistry meterRegistry) {
         this.venueRepository = venueRepository;
         this.slotRepository = slotRepository;
         this.slotGenerationService = slotGenerationService;
         this.slotCacheService = slotCacheService;
+        this.meterRegistry = meterRegistry;
     }
 
     public List<VenueResponse> getActiveVenues() {
@@ -82,9 +87,17 @@ public class VenueService {
             String cacheKey = slotCacheService.buildKey(venueId, date);
             Optional<List<SlotResponse>> cached = slotCacheService.get(cacheKey);
             if (cached.isPresent()) {
+                Counter.builder("seatlock.availability.cache.hit")
+                        .tag("venueId", venueId.toString())
+                        .register(meterRegistry)
+                        .increment();
                 return applyStatusFilter(cached.get(), statusFilter);
             }
 
+            Counter.builder("seatlock.availability.cache.miss")
+                    .tag("venueId", venueId.toString())
+                    .register(meterRegistry)
+                    .increment();
             Instant dayStart = date.atStartOfDay(ZoneOffset.UTC).toInstant();
             Instant dayEnd = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
             List<Slot> slots = slotRepository.findByVenueIdAndDay(venueId, dayStart, dayEnd);

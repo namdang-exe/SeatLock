@@ -1241,7 +1241,7 @@ with the same mock. The non-fatal test was moved to unit level instead (see `Hol
 
 ## Stage 14 — Observability
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Goal:** Make the system inspectable in production. Health, metrics, and dashboards.
 

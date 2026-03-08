@@ -9,6 +9,8 @@ import com.seatlock.booking.dto.HoldResponse.HoldItemResponse;
 import com.seatlock.booking.exception.RedisUnavailableException;
 import com.seatlock.booking.exception.SlotNotAvailableException;
 import com.seatlock.booking.redis.HoldPayload;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
 import com.seatlock.booking.redis.RedisHoldRepository;
@@ -41,19 +43,22 @@ public class HoldService {
     private final JdbcTemplate jdbcTemplate;
     private final JdbcTemplate venueJdbcTemplate;
     private final TransactionTemplate transactionTemplate;
+    private final MeterRegistry meterRegistry;
 
     public HoldService(HoldRepository holdRepository,
                        RedisHoldRepository redisHoldRepository,
                        SlotVerificationClient slotVerificationClient,
                        JdbcTemplate jdbcTemplate,
                        @Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate,
-                       PlatformTransactionManager txManager) {
+                       PlatformTransactionManager txManager,
+                       MeterRegistry meterRegistry) {
         this.holdRepository = holdRepository;
         this.redisHoldRepository = redisHoldRepository;
         this.slotVerificationClient = slotVerificationClient;
         this.jdbcTemplate = jdbcTemplate;
         this.venueJdbcTemplate = venueJdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(txManager);
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -156,7 +161,16 @@ public class HoldService {
         // Step 8: Invalidate availability cache — non-fatal
         invalidateSlotCaches(verifiedSlots);
 
-        // Step 9: Return 200
+        // Step 9: Record metrics — one increment per hold (per slot), tagged by venueId
+        for (InternalSlotResponse slot : verifiedSlots) {
+            String venueTag = slot.venueId() != null ? slot.venueId().toString() : "unknown";
+            Counter.builder("seatlock.holds.created")
+                    .tag("venueId", venueTag)
+                    .register(meterRegistry)
+                    .increment();
+        }
+
+        // Step 10: Return 200
         return toResponse(sessionId, expiresAt, holds);
     }
 

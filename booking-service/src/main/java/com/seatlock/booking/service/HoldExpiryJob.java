@@ -2,6 +2,9 @@ package com.seatlock.booking.service;
 
 import com.seatlock.booking.event.BookingEventPublisher;
 import com.seatlock.booking.event.HoldExpiredEvent;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -29,6 +32,8 @@ public class HoldExpiryJob {
     private final JdbcTemplate venueJdbcTemplate;
     private final PlatformTransactionManager txManager;
     private final BookingEventPublisher eventPublisher;
+    private final Counter holdsExpiredCounter;
+    private final DistributionSummary batchSizeSummary;
 
     @Value("${seatlock.expiry.batch-size:500}")
     int batchSize;
@@ -42,11 +47,16 @@ public class HoldExpiryJob {
     public HoldExpiryJob(JdbcTemplate jdbcTemplate,
                          @Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate,
                          PlatformTransactionManager txManager,
-                         BookingEventPublisher eventPublisher) {
+                         BookingEventPublisher eventPublisher,
+                         MeterRegistry meterRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.venueJdbcTemplate = venueJdbcTemplate;
         this.txManager = txManager;
         this.eventPublisher = eventPublisher;
+        this.holdsExpiredCounter = Counter.builder("seatlock.holds.expired")
+                .register(meterRegistry);
+        this.batchSizeSummary = DistributionSummary.builder("seatlock.expiry.batch.size")
+                .register(meterRegistry);
     }
 
     @Scheduled(
@@ -142,6 +152,8 @@ public class HoldExpiryJob {
                             new HoldExpiredEvent(sessionId, userId, slotIds, Instant.now()));
                 }
 
+                holdsExpiredCounter.increment(expired.size());
+                batchSizeSummary.record(expired.size());
                 log.debug("Hold expiry job processed {} holds across {} sessions",
                         expired.size(), bySession.size());
             }

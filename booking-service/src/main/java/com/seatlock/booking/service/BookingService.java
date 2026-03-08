@@ -18,6 +18,8 @@ import com.seatlock.booking.redis.HoldPayload;
 import com.seatlock.booking.redis.RedisHoldRepository;
 import com.seatlock.booking.repository.BookingRepository;
 import com.seatlock.booking.repository.HoldRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -47,6 +49,7 @@ public class BookingService {
     private final TransactionTemplate transactionTemplate;
     private final ConfirmationNumberGenerator confirmationNumberGenerator;
     private final BookingEventPublisher eventPublisher;
+    private final MeterRegistry meterRegistry;
 
     public BookingService(BookingRepository bookingRepository,
                           HoldRepository holdRepository,
@@ -56,7 +59,8 @@ public class BookingService {
                           @Qualifier("venueJdbcTemplate") JdbcTemplate venueJdbcTemplate,
                           PlatformTransactionManager txManager,
                           ConfirmationNumberGenerator confirmationNumberGenerator,
-                          BookingEventPublisher eventPublisher) {
+                          BookingEventPublisher eventPublisher,
+                          MeterRegistry meterRegistry) {
         this.bookingRepository = bookingRepository;
         this.holdRepository = holdRepository;
         this.redisHoldRepository = redisHoldRepository;
@@ -66,6 +70,7 @@ public class BookingService {
         this.transactionTemplate = new TransactionTemplate(txManager);
         this.confirmationNumberGenerator = confirmationNumberGenerator;
         this.eventPublisher = eventPublisher;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -156,7 +161,12 @@ public class BookingService {
             // Event publishing failure must not affect booking confirmation response
         }
 
-        // Step 9: Return 201
+        // Step 9: Record metric
+        Counter.builder("seatlock.bookings.confirmed")
+                .register(meterRegistry)
+                .increment();
+
+        // Step 10: Return 201
         return toResponse(confirmationNumber, sessionId, bookings);
     }
 

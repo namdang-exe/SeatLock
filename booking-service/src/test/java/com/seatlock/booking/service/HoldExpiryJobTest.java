@@ -2,6 +2,7 @@ package com.seatlock.booking.service;
 
 import com.seatlock.booking.event.BookingEventPublisher;
 import com.seatlock.booking.event.HoldExpiredEvent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,7 +45,8 @@ class HoldExpiryJobTest {
 
     @BeforeEach
     void setUp() {
-        job = new HoldExpiryJob(jdbcTemplate, venueJdbcTemplate, txManager, eventPublisher);
+        job = new HoldExpiryJob(jdbcTemplate, venueJdbcTemplate, txManager, eventPublisher,
+                new SimpleMeterRegistry());
         job.batchSize = 100;
         job.maxRetries = 3;
         job.retryBackoffBaseMs = 0; // no sleep in tests

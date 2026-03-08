@@ -4,6 +4,31 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-08] `VenueDbConfig` suppresses Spring Boot's auto-configured `JdbcTemplate`, both injections hit venue_db
+
+**Stage:** Bug found during Stage 14 prep (hold endpoint 500 error)
+
+**Symptom:**
+`POST /api/v1/holds` returns 500 with `DataIntegrityViolationException: null value in column "address" of relation "venues"`. The `address` column does not exist in booking-service's local `venues` table (V3 migration) — only in venue-service's full schema.
+
+**Root cause:**
+`VenueDbConfig` declares a `@Bean JdbcTemplate venueJdbcTemplate(...)`. Spring Boot's `JdbcTemplateAutoConfiguration` has `@ConditionalOnMissingBean(JdbcOperations.class)` on its `jdbcTemplate` bean method. Since `JdbcTemplate` implements `JdbcOperations`, the existence of `venueJdbcTemplate` satisfies that condition and Spring Boot **skips creating the auto-configured primary JdbcTemplate**. As a result, `HoldService`'s unqualified `JdbcTemplate jdbcTemplate` injection receives `venueJdbcTemplate` (the only JdbcTemplate bean in context), which points to `venue_db` instead of `booking_db`. The venues upsert hits venue_db's full-schema `venues` table, triggering the NOT NULL violation.
+
+**Fix:**
+Add an explicit `@Primary @Bean("jdbcTemplate")` in `VenueDbConfig` that wraps the auto-configured `DataSource` (booking_db). This ensures two distinct JdbcTemplate beans exist: the primary one for booking_db, and `venueJdbcTemplate` for venue_db.
+
+```java
+@Primary
+@Bean("jdbcTemplate")
+public JdbcTemplate bookingJdbcTemplate(DataSource dataSource) {
+    return new JdbcTemplate(dataSource);
+}
+```
+
+**Files changed:** `booking-service/.../config/VenueDbConfig.java`
+
+---
+
 ## [2026-03-07] Spring `@MockitoBean` replaces ALL beans of matching type, not just by name
 
 **Stage:** Maintenance — venue_db slot status write gap (session 2)

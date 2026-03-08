@@ -7,6 +7,7 @@ import com.seatlock.booking.exception.BookingNotFoundException;
 import com.seatlock.booking.exception.CancellationWindowClosedException;
 import com.seatlock.booking.exception.ForbiddenException;
 import com.seatlock.booking.redis.RedisHoldRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,7 +56,8 @@ class CancellationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CancellationService(jdbcTemplate, venueJdbcTemplate, txManager, redisHoldRepository, eventPublisher);
+        service = new CancellationService(jdbcTemplate, venueJdbcTemplate, txManager, redisHoldRepository, eventPublisher,
+                new SimpleMeterRegistry());
 
         lenient().when(txManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());
