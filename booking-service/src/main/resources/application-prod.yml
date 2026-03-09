@@ -25,9 +25,10 @@ spring:
     vault:
       enabled: false
     aws:
-      # Use ECS task role — no static credentials
-      credentials:
-        instance-profile: true
+      # ECS Fargate injects task role credentials via AWS_CONTAINER_CREDENTIALS_RELATIVE_URI.
+      # The AWS SDK default chain picks these up automatically — do NOT set
+      # instance-profile: true (that targets the EC2 metadata endpoint which
+      # is unavailable in Fargate).
       sqs:
         # Empty = use real AWS SQS endpoint
         endpoint:

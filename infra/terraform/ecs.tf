@@ -274,6 +274,10 @@ resource "aws_ecs_service" "services" {
   # Allow ECS to replace tasks without waiting for deregistration
   force_new_deployment = true
 
+  # Spring Boot takes ~90s to start. Give it 3 min before ALB health check
+  # failures can cause ECS to kill the task.
+  health_check_grace_period_seconds = 180
+
   network_configuration {
     subnets          = aws_subnet.private[*].id
     security_groups  = [aws_security_group.ecs.id]

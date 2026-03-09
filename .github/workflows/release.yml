@@ -1,0 +1,188 @@
+name: Release — Deploy to Production
+
+# Triggered automatically when a v* tag is pushed.
+# Flow:
+#   1. build-and-push  — auto: test, build Docker images, push to ECR
+#   2. deploy          — manual approval required (GitHub Environment: production)
+#                        deploys new images to ECS and waits for stability
+#   3. publish-release — auto: marks the GitHub draft release as published
+#
+# Setup required (one-time):
+#   GitHub → Settings → Environments → New environment → name: "production"
+#   Add required reviewers so the deploy job waits for approval.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  AWS_REGION: us-east-1
+  ECR_PREFIX: seatlock
+
+jobs:
+
+  # ── 1. Build, test and push images tagged with the release version ───────────
+  build-and-push:
+    name: Build & Push (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        run: ./gradlew test --no-daemon
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push — user-service
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG:      ${{ github.ref_name }}
+        run: |
+          docker build -f user-service/Dockerfile \
+            -t $REGISTRY/$ECR_PREFIX/user-service:$TAG \
+            -t $REGISTRY/$ECR_PREFIX/user-service:latest .
+          docker push $REGISTRY/$ECR_PREFIX/user-service:$TAG
+          docker push $REGISTRY/$ECR_PREFIX/user-service:latest
+
+      - name: Build and push — venue-service
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG:      ${{ github.ref_name }}
+        run: |
+          docker build -f venue-service/Dockerfile \
+            -t $REGISTRY/$ECR_PREFIX/venue-service:$TAG \
+            -t $REGISTRY/$ECR_PREFIX/venue-service:latest .
+          docker push $REGISTRY/$ECR_PREFIX/venue-service:$TAG
+          docker push $REGISTRY/$ECR_PREFIX/venue-service:latest
+
+      - name: Build and push — booking-service
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG:      ${{ github.ref_name }}
+        run: |
+          docker build -f booking-service/Dockerfile \
+            -t $REGISTRY/$ECR_PREFIX/booking-service:$TAG \
+            -t $REGISTRY/$ECR_PREFIX/booking-service:latest .
+          docker push $REGISTRY/$ECR_PREFIX/booking-service:$TAG
+          docker push $REGISTRY/$ECR_PREFIX/booking-service:latest
+
+      - name: Build and push — notification-service
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG:      ${{ github.ref_name }}
+        run: |
+          docker build -f notification-service/Dockerfile \
+            -t $REGISTRY/$ECR_PREFIX/notification-service:$TAG \
+            -t $REGISTRY/$ECR_PREFIX/notification-service:latest .
+          docker push $REGISTRY/$ECR_PREFIX/notification-service:$TAG
+          docker push $REGISTRY/$ECR_PREFIX/notification-service:latest
+
+  # ── 2. Deploy to ECS — pauses here for manual approval ──────────────────────
+  deploy:
+    name: Deploy to ECS (${{ needs.build-and-push.outputs.version }})
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production   # ← reviewer must approve before this job runs
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Force new deployment — user-service
+        run: |
+          aws ecs update-service \
+            --cluster seatlock-cluster \
+            --service seatlock-user-service \
+            --force-new-deployment \
+            --no-cli-pager
+
+      - name: Force new deployment — venue-service
+        run: |
+          aws ecs update-service \
+            --cluster seatlock-cluster \
+            --service seatlock-venue-service \
+            --force-new-deployment \
+            --no-cli-pager
+
+      - name: Force new deployment — booking-service
+        run: |
+          aws ecs update-service \
+            --cluster seatlock-cluster \
+            --service seatlock-booking-service \
+            --force-new-deployment \
+            --no-cli-pager
+
+      - name: Force new deployment — notification-service
+        run: |
+          aws ecs update-service \
+            --cluster seatlock-cluster \
+            --service seatlock-notification-service \
+            --force-new-deployment \
+            --no-cli-pager
+
+      - name: Wait for all services to stabilise
+        run: |
+          for svc in seatlock-user-service seatlock-venue-service \
+                     seatlock-booking-service seatlock-notification-service; do
+            echo "Waiting for $svc..."
+            aws ecs wait services-stable \
+              --cluster seatlock-cluster \
+              --services $svc \
+              --no-cli-pager
+          done
+          echo "All services stable."
+
+  # ── 3. Publish the GitHub release ───────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release (${{ needs.build-and-push.outputs.version }})
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION:  ${{ needs.build-and-push.outputs.version }}
+        run: |
+          # If a draft release already exists for this tag, publish it.
+          # Otherwise create a new published release.
+          if gh release view "$VERSION" --json isDraft -q '.isDraft' 2>/dev/null | grep -q true; then
+            gh release edit "$VERSION" --draft=false --latest
+            echo "Draft release $VERSION published."
+          else
+            gh release create "$VERSION" \
+              --title "SeatLock $VERSION" \
+              --notes "Deployed to AWS ECS on $(date -u '+%Y-%m-%d %H:%M UTC') by ${{ github.actor }}" \
+              --latest
+            echo "Release $VERSION created."
+          fi
