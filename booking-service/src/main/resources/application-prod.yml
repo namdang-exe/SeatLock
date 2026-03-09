@@ -1,0 +1,35 @@
+seatlock:
+  jwt:
+    algorithm: RS256
+    # Public key only — booking-service never signs user tokens
+    public-key: ${SEATLOCK_JWT_PUBLIC_KEY}
+  venue-datasource:
+    url: jdbc:postgresql://${VENUE_RDS_ENDPOINT}:5432/venue_db
+    username: ${RDS_USERNAME}
+    password: ${RDS_PASSWORD}
+  venue-service:
+    base-url: http://venue-service.seatlock.local:8082
+  sqs:
+    queue-url: ${SQS_QUEUE_URL}
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${RDS_ENDPOINT}:5432/booking_db
+    username: ${RDS_USERNAME}
+    password: ${RDS_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: 6379
+  cloud:
+    vault:
+      enabled: false
+    aws:
+      # Use ECS task role — no static credentials
+      credentials:
+        instance-profile: true
+      sqs:
+        # Empty = use real AWS SQS endpoint
+        endpoint:
+      region:
+        static: ${AWS_REGION:us-east-1}

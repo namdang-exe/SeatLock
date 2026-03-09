@@ -32,7 +32,7 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 14 | Observability | NOT STARTED |
 | 15 | Frontend: Auth + Browse | NOT STARTED |
 | 16 | Frontend: Booking Flows | NOT STARTED |
-| 17 | Infrastructure (AWS) | NOT STARTED |
+| 17 | Infrastructure (AWS) | IN PROGRESS |
 
 ---
 
@@ -1407,7 +1407,25 @@ client.interceptors.request.use(config => {
 
 ## Stage 17 — Infrastructure (AWS)
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
+
+**Stopped at:** All Terraform + CI/CD code is written. Waiting on user to install Terraform and run deployment steps.
+
+**Next session must do first:**
+1. Install Terraform (see README or note below)
+2. `cd infra/terraform && cp terraform.tfvars.example terraform.tfvars` → fill in `db_password`
+3. `terraform init` then `terraform plan` then `terraform apply`
+4. Store secrets in AWS Secrets Manager (RSA keys, DB password, service JWT secret, SMTP creds)
+5. Add `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` to GitHub repo Secrets
+6. `git push` to trigger the deploy workflow
+7. Verify with `curl http://$(terraform output -raw alb_dns_name)/api/v1/auth/register ...`
+
+**RSA keys are stored in `/tmp/jwt_private.pem` + `/tmp/jwt_public.pem` on the machine where they were generated (this session). If those files are gone, regenerate with:**
+```bash
+openssl genrsa -out /tmp/jwt_raw.pem 2048
+openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in /tmp/jwt_raw.pem -out /tmp/jwt_private.pem
+openssl rsa -in /tmp/jwt_raw.pem -pubout -out /tmp/jwt_public.pem
+```
 
 **Goal:** Deploy the fully working local system to AWS. Provision all infrastructure with Terraform. Full CI/CD pipeline.
 

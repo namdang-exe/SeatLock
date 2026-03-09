@@ -4,6 +4,34 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-08] Notification email exposes internal `sessionId` to users
+
+**Stage:** Stage 16 (Frontend + Notifications review)
+
+**Symptom:**
+Booking confirmed email body contained `"Session ID: <UUID>"`. Users can see the internal `sessionId` field, which is meaningless to them and represents an unintended information disclosure.
+
+**Root cause:**
+`EmailService.sendBookingConfirmed()` included `"Session ID: " + event.sessionId()` appended to the email body. `sendHoldExpired()` also appended `"Session ID: " + event.sessionId()` instead of displaying the slot count.
+
+**Fix:**
+Removed `sessionId` from both email bodies. Booking confirmed email now shows only `confirmationNumber` and `slotIds.size()`. Hold expired email shows only the slot count (with correct singular/plural).
+
+```java
+public void sendBookingConfirmed(BookingConfirmedEvent event) {
+    send("Booking confirmed — " + event.confirmationNumber(),
+         "Your booking is confirmed.\n\n" +
+         "Confirmation number: " + event.confirmationNumber() + "\n" +
+         "Slots booked: " + event.slotIds().size());
+}
+```
+
+**Files changed:** `notification-service/src/main/java/com/seatlock/notification/service/EmailService.java`
+
+**Rule going forward:** Never include internal identifiers (sessionId, holdId, internal UUIDs) in user-facing notification content. Only include user-facing references (confirmationNumber) and human-readable summaries.
+
+---
+
 ## [2026-03-08] `VenueDbConfig` suppresses Spring Boot's auto-configured `JdbcTemplate`, both injections hit venue_db
 
 **Stage:** Bug found during Stage 14 prep (hold endpoint 500 error)

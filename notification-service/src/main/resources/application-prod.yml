@@ -1,0 +1,27 @@
+seatlock:
+  notifications:
+    queue-name: ${SQS_QUEUE_NAME:seatlock-events}
+    from-address: ${SMTP_FROM_ADDRESS}
+    default-recipient: ${SMTP_DEFAULT_RECIPIENT}
+
+spring:
+  cloud:
+    vault:
+      enabled: false
+    aws:
+      # Use ECS task role — no static credentials
+      credentials:
+        instance-profile: true
+      sqs:
+        # Empty = use real AWS SQS endpoint
+        endpoint:
+      region:
+        static: ${AWS_REGION:us-east-1}
+  mail:
+    host: ${SMTP_HOST:email-smtp.us-east-1.amazonaws.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME}
+    password: ${SMTP_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true

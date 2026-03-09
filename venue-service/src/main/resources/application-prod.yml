@@ -1,0 +1,18 @@
+seatlock:
+  jwt:
+    algorithm: RS256
+    # Public key only — venue-service never signs tokens
+    public-key: ${SEATLOCK_JWT_PUBLIC_KEY}
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${RDS_ENDPOINT}:5432/venue_db
+    username: ${RDS_USERNAME}
+    password: ${RDS_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: 6379
+  cloud:
+    vault:
+      enabled: false

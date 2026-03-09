@@ -10,7 +10,7 @@
 
 | Item | Status |
 |------|--------|
-| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–13 complete + 2 maintenance sessions, Stage 14 next) |
+| Phase | **Phase 1 — Foundation** (IN PROGRESS — Stages 1–16 complete + 2 maintenance sessions, Stage 17 next) |
 | Part 1 — Design Interview | ✅ COMPLETE (all 6 sections) |
 | Section 1 — Requirements | ✅ COMPLETE → `docs/system-design/01-requirements.md` |
 | Section 2 — Core Entities | ✅ COMPLETE → `docs/system-design/02-core-entities.md` |
@@ -199,6 +199,21 @@
 - We chose **a `ClientHttpRequestInterceptor` on `RestClient`** (not `defaultHeader`) to inject the service JWT on booking-service's venue calls. `defaultHeader` computes the value once at bean-creation time; the interceptor generates a fresh token for every request, respecting the 5-minute TTL.
 - We chose **`V0__create_stub_tables.sql` in `booking-service/src/test/resources/db/migration/`** as test-only stub migration. It creates a minimal `users` table for test data setup. Flyway picks it up because test resources are on the integrationTest classpath via `sourceSets.test.get().output`.
 - We chose **`SecurityConfig` in booking-service permits only `/actuator/health` and `/error`** publicly (all else requires a user JWT). This is the correct shape for Stages 7+; no `/api/v1/**` routes exist yet so no further rules are needed in Stage 6.
+
+### Implementation Decisions (Phase 1 — Stages 13–16: Swagger, Observability, Frontend)
+
+- We chose **`springdoc-openapi-starter-webmvc-ui:2.8.4`** for Swagger UI in user/venue/booking services (notification-service excluded — no public endpoints). Each service has `OpenApiConfig.java` defining a `bearerAuth` security scheme; `SecurityConfig` permits `/swagger-ui/**` and `/v3/api-docs/**` without auth.
+- We chose **`micrometer-registry-prometheus` as a `runtimeOnly` dependency** (not `implementation`) in all four service `build.gradle.kts` files. Spring Boot's Actuator autoconfigures the Prometheus registry when the artifact is on the classpath at runtime; no code changes needed.
+- We chose **`/actuator/**` in `SecurityConfig.permitAll()`** (not just `/actuator/health`) so Prometheus can scrape `/actuator/prometheus` without a JWT. This is acceptable because Prometheus metrics contain no sensitive user data.
+- We chose **Prometheus pull-based scraping** (15s interval, `static_configs` with `host.docker.internal`) over push-based metrics. Prometheus runs in Docker and reaches the Spring Boot services on the host via `host.docker.internal`.
+- We chose **`SimpleMeterRegistry` in all unit tests** (not `@Mock MeterRegistry`) for `HoldService`, `BookingService`, `CancellationService`, and `HoldExpiryJob`, because `Counter.builder(...).register(registry).increment()` and `DistributionSummary.builder(...).register(registry).record(...)` use a builder chain that requires a real implementation — a mock would return null for intermediate builder calls.
+- We chose **Vite dev proxy** (option B) over an Nginx reverse proxy or direct service calls for the frontend API routing. The Vite proxy routes `/api/v1/auth/**` → 8081, `/api/v1/venues/**` + `/api/v1/admin/**` → 8082, `/api/v1/holds/**` + `/api/v1/bookings/**` → 8083 at dev-server level. No CORS config needed, no extra Docker container.
+- We chose **`crypto.randomUUID()`** (built-in browser API, Web Crypto standard) over adding an `uuid` npm package for the `Idempotency-Key` header on `POST /holds`. Available in all modern browsers without an import.
+- We chose **React Router `navigate(path, { state: {...} })`** to pass hold/slot data from `SlotsPage` → `HoldPage` instead of calling `GET /holds/:sessionId` (which doesn't exist in the API). The hold confirm flow is purely navigation-state-driven; no extra endpoint needed.
+- We chose **fetch-and-filter on `BookingDetailPage`** (call `GET /bookings` then filter by `confirmationNumber` from `useParams`) because the API has no single-booking GET endpoint. This avoids adding a new endpoint for Phase 1.
+- We chose **`canCancel` logic checks all CONFIRMED slots > 24h in future** so the cancel button is hidden when any CONFIRMED slot is within the cancellation window, preventing backend rejections.
+- We chose **`useQueryClient().invalidateQueries()`** after a successful cancel on `BookingsPage` instead of a page reload, so TanStack Query re-fetches the booking list automatically and the UI updates without a full reload.
+- We removed **`sessionId` from notification emails** sent to users (`EmailService.sendBookingConfirmed`, `sendHoldExpired`). The sessionId is internal infrastructure; users only need the confirmation number and slot count. Displaying sessionId in user-facing emails is a privacy and UX issue.
 
 ### Implementation Decisions (Phase 1 — Maintenance: Cross-Service DB Integrity)
 

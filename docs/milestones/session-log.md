@@ -5,6 +5,96 @@
 
 ---
 
+## Session 2026-03-08 — Stages 14, 15, 16: Observability + Frontend + Notifications
+
+**Phase:** 1 — Foundation (Stages 14–16 complete; Stage 17 next)
+**Started at:** Bug fix (POST /holds 500 error), then Stages 14 → 15 → 16 in sequence
+**Ended at:** Stages 14, 15, 16 COMPLETE. .gitignore + README updated. End-of-session docs updated.
+
+### What Was Accomplished
+
+**Bug fix — POST /holds returning 500 (DataIntegrityViolationException on venues.address):**
+- Root cause: `VenueDbConfig` declared `@Bean JdbcTemplate venueJdbcTemplate(...)`. Spring Boot's `JdbcTemplateAutoConfiguration` has `@ConditionalOnMissingBean(JdbcOperations.class)` — since `JdbcTemplate` implements `JdbcOperations`, the existing venueJdbcTemplate suppressed the auto-configured primary JdbcTemplate. `HoldService`'s unqualified injection received `venueJdbcTemplate` (venue_db), which hit the full-schema `venues` table with NOT NULL address column.
+- Fix: Added `@Primary @Bean("jdbcTemplate") public JdbcTemplate bookingJdbcTemplate(DataSource dataSource)` to `VenueDbConfig`.
+
+**Stage 14 — Observability (Prometheus + Grafana + custom metrics):**
+- `micrometer-registry-prometheus` added to all 4 services as `runtimeOnly`
+- `management.endpoints.web.exposure.include: health,metrics,prometheus` + `show-details: always` added to all 4 `application.yml`
+- `SecurityConfig` updated: `/actuator/health` → `/actuator/**` in `permitAll()` in all 3 user-facing services
+- `VenueService`: `seatlock.availability.cache.hit` + `seatlock.availability.cache.miss` counters with `venueId` tag
+- `HoldService`: `seatlock.holds.created` counter per slot with `venueId` tag
+- `BookingService`: `seatlock.bookings.confirmed` counter
+- `CancellationService`: `seatlock.bookings.cancelled` counter
+- `HoldExpiryJob`: pre-built `seatlock.holds.expired` counter + `seatlock.expiry.batch.size` DistributionSummary
+- Unit tests updated to pass `new SimpleMeterRegistry()` to all service constructors
+- `infra/prometheus/prometheus.yml` created — scrapes all 4 services at `host.docker.internal:808x`
+- `infra/grafana/provisioning/datasources/prometheus.yml` + `dashboards/dashboard.yml` created
+- `infra/grafana/dashboards/seatlock.json` created — 6 panels (hold rate, booking rate, cache hit ratio, expiry rate, batch size p50/p95, service health table)
+- `docker-compose.yml` updated: added `prometheus` (port 9090) + `grafana` (port 3001) services
+
+**Stage 15 — Frontend (React SPA: auth + venue browse + slot polling + hold flow):**
+- `seatlock-ui/` initialized: React 18, TypeScript, Vite 5, TanStack Query v5, Axios, React Router v6, Tailwind CSS
+- `vite.config.ts`: Vite dev proxy routing `/api/v1/auth` → 8081, `/api/v1/venues` → 8082, holds/bookings → 8083
+- `src/api/client.ts`: Axios instance with JWT interceptor (reads `token` from localStorage)
+- `src/api/auth.ts`: `login()`, `register()` — `RegisterRequest: { email, password, phone? }` (no firstName/lastName)
+- `src/api/venues.ts`: `getVenues()`, `getSlots()`, `createHold()` with `crypto.randomUUID()` for Idempotency-Key
+- `src/api/errors.ts`: domain error code → human-readable message map
+- Pages: `LoginPage`, `RegisterPage`, `VenuesPage` (5s polling via `refetchInterval`), `SlotsPage` (slot grid with hold selection)
+- Routes in `App.tsx`
+
+**Stage 16 — Frontend (hold confirmation + booking history + cancellation):**
+- `src/api/bookings.ts`: `confirmBooking()`, `getBookingHistory()`, `cancelBooking()`
+- `HoldPage.tsx`: countdown timer (turns red at <120s), disables Confirm when expired, shows slot details from navigation state
+- `BookingsPage.tsx`: booking history list, `canCancel()` checks all CONFIRMED slots > 24h, inline cancel with query invalidation
+- `BookingDetailPage.tsx`: fetch-and-filter by confirmationNumber, full-page cancel button, shows cancelledAt
+- `App.tsx` routes: `/holds/:sessionId`, `/bookings`, `/bookings/:confirmationNumber`
+- `VenuesPage.tsx`: added "My Bookings" link in header
+
+**Email fix — sessionId exposed in notification emails:**
+- `EmailService.sendBookingConfirmed()`: removed `"Session ID: " + event.sessionId()` from body
+- `EmailService.sendHoldExpired()`: replaced sessionId with slot count + singular/plural
+
+**Documentation + housekeeping:**
+- `readme.md`: added Step 3 (frontend setup), Frontend URL to Useful URLs table, seatlock-ui to project structure, Observability section
+- `.gitignore`: added `seatlock-ui/node_modules/`, `seatlock-ui/dist/`, `seatlock-ui/.vite/`, `local.session.sql`, Terraform artifacts
+- `docs/CODING_PLAN.md`: Stages 14, 15, 16 marked COMPLETE
+- `docs/INDEX.md`: Stages 14, 15, 16 marked COMPLETE; current stage set to 17
+
+### Decisions Made
+
+1. **Vite dev proxy over Nginx** — simpler, no extra Docker container, proxying at dev server level avoids CORS entirely
+2. **`crypto.randomUUID()`** for Idempotency-Key — built-in browser Web Crypto API, no npm dependency
+3. **React Router navigation state** for hold data (SlotsPage → HoldPage) — avoids needing `GET /holds/:sessionId` endpoint
+4. **Fetch-and-filter** on BookingDetailPage — avoids adding a single-booking GET endpoint
+5. **`SimpleMeterRegistry` in unit tests** — real Micrometer implementation required for builder chain; `@Mock` would return null
+6. **Privacy rule established**: never include internal identifiers (sessionId, holdId) in user-facing emails
+
+### Files Modified (key files)
+
+- `booking-service/src/main/java/com/seatlock/booking/config/VenueDbConfig.java`
+- All 4 `build.gradle.kts` — added `micrometer-registry-prometheus`
+- All 4 `application.yml` — updated management endpoints
+- `venue-service/.../service/VenueService.java`, `booking-service/.../service/HoldService.java`, `BookingService.java`, `CancellationService.java`, `HoldExpiryJob.java` — metrics added
+- All 4 service unit test files — `SimpleMeterRegistry` added to constructors
+- `infra/prometheus/prometheus.yml` (new), `infra/grafana/**` (new)
+- `docker-compose.yml` — Prometheus + Grafana services added
+- `seatlock-ui/` — entire frontend (new): package.json, vite.config.ts, src/api/*, src/pages/*, App.tsx, index.css
+- `notification-service/.../service/EmailService.java`
+- `readme.md`, `.gitignore`
+
+### Gotchas and Surprises
+
+- Prometheus scraping all 4 services failed initially: booking-service wasn't running, user-service needed restart for SecurityConfig change, venue + notification needed rebuild for missing Prometheus registry dependency
+- Vite Go Live extension from VS Code doesn't work for this project — must use `npm run dev` to get the proxy
+- Stage 17 (AWS Infrastructure) not yet started; user was asked 2 pre-questions (AWS account, RS256 migration) but session ended before answering
+
+### Next Session
+
+1. Answer pre-questions for Stage 17: (a) does user have an AWS account? (b) should RS256 migration happen before or after Terraform?
+2. Begin Stage 17 — AWS Infrastructure (Terraform, ECS Fargate, RDS, ElastiCache, SQS, ALB, Cloud Map, Secrets Manager)
+
+---
+
 ## Session 2026-03-07 (session 2) — Maintenance: venue_db Slot Status Write Gap
 
 **Phase:** 1 — Foundation (between Stages 13 and 14)

@@ -10,6 +10,10 @@ java {
     }
 }
 
+tasks.bootJar {
+    archiveFileName.set("app.jar")
+}
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }

@@ -1,0 +1,16 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# terraform.tfvars is gitignored — never commit it.
+
+aws_region  = "us-east-1"
+environment = "prod"
+
+# RDS master credentials (all three databases use the same username/password)
+db_username = "seatlock"
+db_password = "choose-a-strong-password-here"
+
+# Docker image tag to deploy (use "latest" for the first deploy)
+app_version = "latest"
+
+# Notification email settings
+smtp_from_address      = "noreply@yourdomain.com"
+smtp_default_recipient = "your-test-email@example.com"
