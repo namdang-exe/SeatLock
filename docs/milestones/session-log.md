@@ -5,6 +5,52 @@
 
 ---
 
+## Session 2026-03-11 — Stage 17: Full booking flow smoke test + CI/CD finalised
+
+**Phase:** 1 — Foundation (Stage 17 COMPLETE)
+**Started at:** Stage 17 IN PROGRESS — infrastructure already deployed, admin user missing
+**Ended at:** Stage 17 COMPLETE. Full booking flow smoke tested live on AWS. deploy.yml split into CI-only + tag-based release pipeline.
+
+### What Was Accomplished
+
+**Admin user bootstrap (OQ-23 resolved):**
+- Avoided committing credentials to git — used AWS CloudShell in VPC mode instead
+- CloudShell → Actions → Create VPC environment → private subnet + ECS security group
+- `sudo dnf install -y postgresql15` then `psql` directly against RDS private endpoint
+- Retrieved DB password via `aws secretsmanager get-secret-value --secret-id /seatlock/db/password`
+- Found admin user already existed (from a previous session's direct insert); updated `password_hash` via `UPDATE users SET password_hash = '...' WHERE email = 'admin@seatlock.com'`
+
+**Full booking flow smoke test — all steps passed live on AWS ALB:**
+- ✅ Admin login → JWT issued (RS256)
+- ✅ POST /api/v1/admin/venues → venue created
+- ✅ POST /api/v1/admin/venues/{id}/slots/generate → slots generated
+- ✅ Register + login as regular user
+- ✅ POST /api/v1/holds → Redis SETNX gate + Postgres write confirmed
+- ✅ POST /api/v1/bookings → confirmation number issued
+- ✅ GET /api/v1/bookings → history returned
+- ✅ POST /api/v1/bookings/{cn}/cancel → correctly rejected with CANCELLATION_WINDOW_CLOSED (slot was in the past)
+
+**CI/CD pipeline split (OQ-24 resolved):**
+- `deploy.yml` renamed to `CI — Build & Push`: triggers on every push to master; runs tests + builds Docker images + pushes to ECR; **no ECS deploy**
+- `release.yml` (already written): triggers on `v*` tags; builds + pushes to ECR → manual approval gate (`production` GitHub Environment) → ECS force-new-deployment → publishes GitHub release
+- One-time setup: GitHub → Settings → Environments → New environment named `production` → Required reviewers
+
+**Accidental commit recovery:**
+- V2__seed_admin.sql (containing BCrypt hash) was accidentally committed locally
+- Reverted with `git reset --hard HEAD~1` before pushing — never reached GitHub
+
+### Decisions Made
+
+1. **CloudShell VPC mode over ECS Exec** — no local plugin install needed; CloudShell runs in-browser inside the VPC and can reach private RDS directly
+2. **CI-only on master push** — ECS deploys are now gated behind release tags + manual approval; prevents accidental prod deploys on every commit
+3. **No migration for admin seed** — one-time psql INSERT is cleaner than a committed credential; `ON CONFLICT DO NOTHING` migration approach rejected as a security risk
+
+### Next Session
+
+Stage 17 is COMPLETE. All stages in Phase 1 are done. Begin Phase 2 planning or start the next project milestone.
+
+---
+
 ## Session 2026-03-08 — Stages 14, 15, 16: Observability + Frontend + Notifications
 
 **Phase:** 1 — Foundation (Stages 14–16 complete; Stage 17 next)

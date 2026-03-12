@@ -47,6 +47,15 @@
 
 ---
 
+## Stage 17 — Open Questions ✅ ALL RESOLVED
+
+| # | Status | Question | Resolution |
+|---|--------|----------|------------|
+| OQ-23 | ✅ | How should the first ADMIN user be seeded in prod? No register endpoint creates ADMIN role; no bastion host exists; RDS is private. | **RESOLVED 2026-03-11:** Used AWS CloudShell in VPC mode (browser-based, no local installs). CloudShell attached to private subnet + ECS security group → installed psql → connected directly to RDS → `UPDATE users SET password_hash = '...' WHERE email = 'admin@seatlock.com'`. Migration approach rejected — commits credentials to git history. |
+| OQ-24 | ✅ | Should `release.yml` (tag-based pipeline) be activated this project? | **RESOLVED 2026-03-11:** Yes. `deploy.yml` stripped to CI-only (test + build + ECR push on master push). `release.yml` is now the sole ECS deploy path: triggered by `v*` tags, pauses for manual approval via GitHub Environment `production`, then deploys and publishes GitHub release. One-time setup: GitHub Settings → Environments → create `production` → add required reviewers. |
+
+---
+
 ## Deferred Cleanups
 
 | # | File | Action |

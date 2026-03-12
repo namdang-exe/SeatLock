@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | IN PROGRESS — Stages 1–16 complete, Stage 17 next |
-| Current implementation stage | Stage 17 — Infrastructure (AWS) |
+| Phase 1+ — Implementation | ✅ COMPLETE — All Stages 1–17 complete |
+| Current implementation stage | All stages complete. Phase 1 done. |
 
 ---
 
@@ -284,7 +284,7 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 14 | Observability | Actuator health, Prometheus metrics, Grafana dashboard | COMPLETE |
 | 15 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | COMPLETE |
 | 16 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | COMPLETE |
-| 17 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | NOT STARTED |
+| 17 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | COMPLETE |
 
 ### Stage 10 — booking-service: Cancellation + History
 
