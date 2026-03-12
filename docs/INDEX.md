@@ -10,8 +10,8 @@
 | Item | Status |
 |------|--------|
 | Phase 0 — System Design | ✅ COMPLETE |
-| Phase 1+ — Implementation | ✅ COMPLETE — All Stages 1–17 complete |
-| Current implementation stage | All stages complete. Phase 1 done. |
+| Phase 1+ — Implementation | Phase 1 ✅ COMPLETE (Stages 1–17). Stages 18–20 planned (NOT STARTED). |
+| Current implementation stage | Stage 18 — E2E Tests (AWS) — next up |
 
 ---
 
@@ -285,6 +285,9 @@ Full detail in `docs/CODING_PLAN.md`. Summary below.
 | 15 | Frontend: Auth + Browse | React, login/register, venue browse, slot polling (5s) | COMPLETE |
 | 16 | Frontend: Booking Flows | Hold confirm, cancel, history, domain error messages | COMPLETE |
 | 17 | Infrastructure (AWS) | Terraform ECS+RDS+Redis+ALB, GitHub Actions deploy pipeline | COMPLETE |
+| 18 | E2E Tests (AWS) | Newman/Postman collection, full happy path against live ALB, release gate | NOT STARTED |
+| 19 | Frontend Deployment | S3 + CloudFront static hosting, Terraform, Vite build wired to ALB | NOT STARTED |
+| 20 | Frontend UI Polish | Tailwind redesign — cards, slot grid colours, skeletons, mobile layout | NOT STARTED |
 
 ### Stage 10 — booking-service: Cancellation + History
 

@@ -33,6 +33,9 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 15 | Frontend: Auth + Browse | NOT STARTED |
 | 16 | Frontend: Booking Flows | NOT STARTED |
 | 17 | Infrastructure (AWS) | COMPLETE |
+| 18 | E2E Tests (AWS) | NOT STARTED |
+| 19 | Frontend Deployment | NOT STARTED |
+| 20 | Frontend UI Polish | NOT STARTED |
 
 ---
 
@@ -1521,3 +1524,89 @@ For quick lookup without opening the full design docs:
 
 ### Hold Expiry Job (Stage 9) — SKIP LOCKED
 `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 500 → BATCH: UPDATE holds EXPIRED + UPDATE slots AVAILABLE → No Redis DEL → SQS HoldExpiredEvent`
+
+---
+
+## Stage 18 — E2E Tests (AWS)
+
+**Status:** NOT STARTED
+
+**Goal:** Add an automated end-to-end test suite that runs the full booking flow against the live ALB after every production deploy. Acts as a smoke-test gate in `release.yml` — if E2E fails, the GitHub release is not published.
+
+**What to Build:**
+
+- `e2e/seatlock-e2e.postman_collection.json` — Postman collection covering the full happy path:
+  `register → login → create venue (ADMIN) → generate slots → POST /holds → POST /bookings → GET /bookings → POST /cancel`
+- `e2e/seatlock-e2e.postman_environment.json` — environment file with `base_url` variable
+- Newman runner script or direct CLI invocation in CI
+- New job in `.github/workflows/release.yml`: runs after `deploy`, before `publish-release`
+  - Installs Newman: `npm install -g newman`
+  - Runs: `newman run e2e/seatlock-e2e.postman_collection.json --env-var base_url=http://<ALB_DNS>`
+  - ALB DNS injected via GitHub Actions variable or `terraform output`
+  - If Newman exits non-zero, `publish-release` is skipped
+
+**Acceptance Criteria:**
+- [ ] Newman exits 0 on a clean environment (all requests 2xx, all assertions pass)
+- [ ] Newman exits non-zero if any step fails (e.g. login returns 401)
+- [ ] `release.yml` blocks `publish-release` if E2E job fails
+- [ ] Collection covers all 8 steps of the happy path
+- [ ] Idempotency: collection cleans up after itself (cancel the booking it creates)
+
+---
+
+## Stage 19 — Frontend Deployment
+
+**Status:** NOT STARTED
+
+**Goal:** Deploy the React SPA (`seatlock-ui/`) to AWS so it is publicly accessible. The frontend talks to the existing ALB for all API calls.
+
+**What to Build:**
+
+- `infra/terraform/cloudfront.tf`:
+  - `aws_s3_bucket` — private bucket for static assets
+  - `aws_s3_bucket_policy` — allow CloudFront OAC only
+  - `aws_cloudfront_origin_access_control`
+  - `aws_cloudfront_distribution` — S3 origin; default root object `index.html`; custom error response 404 → `index.html` (React Router SPA routing)
+- `seatlock-ui/.env.production` — `VITE_API_BASE_URL=http://<ALB_DNS>` (or blank if proxied via CloudFront behaviour)
+- `infra/terraform/outputs.tf` — add `cloudfront_url` output
+- Updated `deploy.yml` — add build + S3 sync step:
+  ```
+  cd seatlock-ui && npm ci && npm run build
+  aws s3 sync dist/ s3://<bucket> --delete
+  aws cloudfront create-invalidation --distribution-id <id> --paths "/*"
+  ```
+
+**Acceptance Criteria:**
+- [ ] `https://<cloudfront-domain>/` loads the React app
+- [ ] Login, browse venues, create hold, confirm booking all work end-to-end through the CloudFront → ALB path
+- [ ] Page refresh on `/bookings` does not 404 (SPA routing handled by CloudFront error response)
+- [ ] S3 bucket is not publicly accessible directly (OAC only)
+- [ ] Frontend deploy runs automatically on master push (alongside existing ECR push)
+
+---
+
+## Stage 20 — Frontend UI Polish
+
+**Status:** NOT STARTED
+
+**Goal:** Improve the visual quality of the React SPA using Tailwind CSS. No new functionality — pure UX and design improvement.
+
+**What to Build:**
+
+- **Layout:** Consistent max-width container, proper navbar with logo + nav links + user info
+- **Venue browse page:** Card grid with venue image placeholder, address, status badge
+- **Slot grid:** Colour-coded availability (green = AVAILABLE, amber = HELD, red = BOOKED), better time display
+- **Hold page:** Prominent countdown timer with colour transition (green → amber → red), cleaner slot summary table
+- **Booking history:** Timeline-style list grouped by confirmation number, status badges, cancel button placement
+- **Loading states:** Skeleton loaders instead of blank screens during data fetches
+- **Error states:** Friendly error messages with retry buttons instead of raw error codes
+- **Mobile responsiveness:** Single-column layout on small screens, touch-friendly tap targets
+- **Colour palette:** Consistent primary/secondary/accent colours defined in `tailwind.config.js`
+
+**Acceptance Criteria:**
+- [ ] All existing functionality still works after visual changes
+- [ ] Slot grid uses colour coding for availability status
+- [ ] Loading skeletons shown during TanStack Query fetches
+- [ ] Domain error codes (`SLOT_NOT_AVAILABLE`, etc.) show human-readable messages (already in `src/api/errors.ts` — verify wired up consistently)
+- [ ] App is usable on a 375px wide mobile screen
+- [ ] No raw UUIDs or internal IDs visible to users in any view
