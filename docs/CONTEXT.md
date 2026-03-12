@@ -231,6 +231,13 @@
 - We chose **unit test (`HoldServiceTest.venueDbUpdateFails_holdStillSucceeds`) over integration test** for the non-fatal venue_db failure scenario, because Spring's `@MockitoBean` replaces ALL beans of a matching type — declaring `@MockitoBean(name = "venueJdbcTemplate") JdbcTemplate` caused Spring to replace both `JdbcTemplate` beans (primary + venue) with the same mock, breaking the booking_db transaction. Unit tests keep the two mocks independently injectable.
 - We chose **`@Qualifier("venueJdbcTemplate")` on constructor parameters** (not `@Resource` or `@Primary`) to avoid Spring auto-wiring ambiguity when two `JdbcTemplate` beans of the same type exist. The primary (auto-configured) JdbcTemplate has no qualifier; `venueJdbcTemplate` always requires explicit qualification.
 
+### Implementation Decisions (Phase 1 — Stage 17: AWS Infrastructure + CI/CD)
+
+- We chose **AWS CloudShell in VPC mode** over ECS Exec or a Flyway migration to bootstrap the initial ADMIN user because CloudShell runs entirely in-browser with no local tool installation, attaches to the private VPC subnet, and can reach RDS directly via psql. A Flyway migration was rejected because it would commit a hashed credential (and potentially plaintext password) to git history.
+- We chose **CI-only on master push** (`deploy.yml` runs tests + builds + ECR push only) and **ECS deploy on `v*` tag only** (`release.yml` with manual approval gate) because uncontrolled deploys on every commit to a shared environment are error-prone. The tag + approval gate makes production deploys intentional and auditable.
+- We chose **GitHub Environment named `production` with required reviewers** as the manual approval gate for `release.yml` because it is a native GitHub Actions feature requiring zero extra tooling; the approval step blocks the deploy job until a reviewer explicitly approves via the GitHub Actions UI.
+- We chose **`git reset --hard HEAD~1`** to remove an accidentally committed credential file before pushing, because the commit had not been pushed to remote and a hard reset is the cleanest local-only revert with no git history pollution.
+
 ### Implementation Decisions (Phase 1 — Stage 5)
 
 - We chose **`SlotCacheService` as a separate `@Service` class** over inlining Redis logic in `VenueService` because it isolates cache key construction and JSON serialization into a unit-testable component; `VenueService` only needs to call `get`/`put` without knowing the Redis API.

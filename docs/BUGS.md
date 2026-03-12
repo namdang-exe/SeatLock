@@ -4,6 +4,25 @@ Brief record of significant bugs and their fixes. Add new entries at the top.
 
 ---
 
+## [2026-03-11] Admin seed migration accidentally committed with plaintext password
+
+**Stage:** Stage 17 (AWS Infrastructure)
+
+**Symptom:**
+`V2__seed_admin.sql` was staged and committed locally. The file contained a SQL comment with the plaintext password (`-- Password: SeatLockAdmin2026!`) making the credential visible in git history even though the BCrypt hash alone would be acceptable.
+
+**Root cause:**
+Admin user seeding via Flyway migration is the wrong approach — any credential (even a hash) committed to git is a permanent record. The plaintext comment made it worse.
+
+**Fix:**
+`git reset --hard HEAD~1` before pushing (commit never reached remote). Used AWS CloudShell in VPC mode instead: attached to private subnet, installed psql, connected to RDS directly, ran a one-time `UPDATE users SET password_hash = '...' WHERE email = 'admin@seatlock.com'`.
+
+**Rule established:** Never seed credentials via Flyway migrations. Use CloudShell VPC mode + psql for one-time bootstrap operations against private RDS.
+
+**Files changed:** None (commit was reverted before push).
+
+---
+
 ## [2026-03-08] Notification email exposes internal `sessionId` to users
 
 **Stage:** Stage 16 (Frontend + Notifications review)
