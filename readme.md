@@ -110,7 +110,7 @@ Do not close until all seven steps are complete.
 docker compose up -d
 ```
 
-Starts Postgres 15, Redis 7, Mailhog (email), and ElasticMQ (SQS) in the background.
+Starts Postgres 15, Redis 7, Mailpit (email), ElasticMQ (SQS), and HashiCorp Vault in the background.
 Verify with `docker compose ps` — all services should show `Up`.
 Close all docker with `docker compose down -v` when finished to free up resources.
 
@@ -179,7 +179,7 @@ seatlock/
 ├── build.gradle.kts           ← root Gradle build (shared versions + plugins)
 ├── settings.gradle.kts        ← declares all subprojects
 ├── gradle.properties          ← JVM args, Gradle daemon config
-├── docker-compose.yml         ← local dev: Postgres, Redis, Mailhog, ElasticMQ
+├── docker-compose.yml         ← local dev: Postgres, Redis, Mailpit, ElasticMQ, Vault
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             ← build + test on every PR
@@ -228,19 +228,20 @@ Full request/response shapes: `docs/system-design/03-api-interface.md`
 
 | Layer | Technology |
 |-------|-----------|
-| Language / Runtime | Java 21, Spring Boot 3.x |
-| Security | Spring Security, JWT (user auth + inter-service) |
-| Persistence | Spring Data JPA, PostgreSQL 15 (RDS) |
-| Cache / Holds | Spring Data Redis, Redis 7 (ElastiCache) |
+| Language / Runtime | Java 21, Spring Boot 3.5.0 |
+| Security | Spring Security, JWT (HS256 local / RS256 prod, user auth + inter-service) |
+| IAM | AWS IAM (cloud — ECS task roles, least-privilege per service) |
+| Persistence | Spring Data JPA, PostgreSQL 15 (AWS RDS) |
+| Cache / Holds | Spring Data Redis, Redis 7 (AWS ElastiCache) |
 | Migrations | Flyway |
 | Messaging | AWS SQS (ElasticMQ locally) |
-| Secrets | HashiCorp Vault (Spring Cloud Vault) |
+| Secrets | HashiCorp Vault / Spring Cloud Vault (local + cloud bootstrap); AWS Secrets Manager (cloud runtime injection) |
 | Service discovery | AWS Cloud Map |
 | Resilience | Resilience4j (circuit breaker + retry) |
 | Observability | Spring Actuator, Micrometer, Prometheus, Grafana |
-| Build | Gradle 8.x (Kotlin DSL), multi-module |
+| Build | Gradle 8.14.4 (Kotlin DSL), multi-module |
 | Testing | JUnit 5, Testcontainers, Mockito, MockMvc |
-| Frontend | React 18, TypeScript, Vite, TanStack Query v5, Tailwind CSS |
+| Frontend | React 18, TypeScript, Vite, TanStack Query v5, Axios, React Router v6, Tailwind CSS |
 | Infrastructure | Terraform, AWS ECS Fargate, Docker |
 | CI/CD | GitHub Actions |
 
