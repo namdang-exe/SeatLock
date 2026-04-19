@@ -1,0 +1,343 @@
+{
+  "info": {
+    "_postman_id": "a7c2e1b3-f4d5-4890-bcde-123456789abc",
+    "name": "SeatLock E2E",
+    "description": "Full happy-path E2E test: register → admin login → create venue → generate slots → user login → browse slots → POST /holds → POST /bookings → GET /bookings → POST /cancel.\n\nRun with Newman:\n  newman run seatlock-e2e.postman_collection.json \\\n    --env-var base_url=http://<ALB_DNS> \\\n    --env-var admin_email=admin@seatlock.com \\\n    --env-var admin_password=<password>",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",            "value": "http://localhost" },
+    { "key": "admin_email",         "value": "admin@seatlock.com" },
+    { "key": "admin_password",      "value": "" },
+    { "key": "test_email",          "value": "" },
+    { "key": "test_password",       "value": "" },
+    { "key": "admin_token",         "value": "" },
+    { "key": "user_token",          "value": "" },
+    { "key": "venue_id",            "value": "" },
+    { "key": "slot_id",             "value": "" },
+    { "key": "slot_date",           "value": "" },
+    { "key": "slot_from_date",      "value": "" },
+    { "key": "slot_to_date",        "value": "" },
+    { "key": "idempotency_key",     "value": "" },
+    { "key": "session_id",          "value": "" },
+    { "key": "confirmation_number", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 — Register test user",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Unique email + password per run",
+              "const ts = Date.now();",
+              "pm.collectionVariables.set('test_email', 'e2e-' + ts + '@test.com');",
+              "pm.collectionVariables.set('test_password', 'E2eTest' + ts + '!');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Register returns 201', () => {",
+              "    pm.response.to.have.status(201);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{test_email}}\", \"password\": \"{{test_password}}\"}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/register" }
+      }
+    },
+    {
+      "name": "02 — Admin login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Admin login returns 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('Admin token present', () => pm.expect(body.token).to.be.a('string').and.not.empty);",
+              "pm.collectionVariables.set('admin_token', body.token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{admin_email}}\", \"password\": \"{{admin_password}}\"}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/login" }
+      }
+    },
+    {
+      "name": "03 — Create venue",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Create venue returns 201', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('venueId present', () => pm.expect(body.venueId).to.be.a('string').and.not.empty);",
+              "pm.collectionVariables.set('venue_id', body.venueId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"E2E Test Venue\", \"address\": \"1 Test St\", \"city\": \"New York\", \"state\": \"NY\"}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/admin/venues" }
+      }
+    },
+    {
+      "name": "04 — Generate slots",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Pick a weekday at least 8 days out (ensures > 24h cancellation window with buffer).",
+              "const d = new Date();",
+              "d.setDate(d.getDate() + 8);",
+              "// Advance to next Monday if needed",
+              "while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);",
+              "const fmt = x => x.toISOString().split('T')[0];",
+              "// Generate Mon–Fri of that week",
+              "const mon = new Date(d);",
+              "while (mon.getDay() !== 1) mon.setDate(mon.getDate() - 1);",
+              "const fri = new Date(mon);",
+              "fri.setDate(mon.getDate() + 4);",
+              "pm.collectionVariables.set('slot_from_date', fmt(mon));",
+              "pm.collectionVariables.set('slot_to_date',   fmt(fri));",
+              "pm.collectionVariables.set('slot_date',      fmt(mon));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Generate slots returns 201', () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"fromDate\": \"{{slot_from_date}}\", \"toDate\": \"{{slot_to_date}}\"}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/admin/venues/{{venue_id}}/slots/generate" }
+      }
+    },
+    {
+      "name": "05 — User login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('User login returns 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('User token present', () => pm.expect(body.token).to.be.a('string').and.not.empty);",
+              "pm.collectionVariables.set('user_token', body.token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{test_email}}\", \"password\": \"{{test_password}}\"}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/login" }
+      }
+    },
+    {
+      "name": "06 — Browse slots",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Browse slots returns 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('At least one slot returned', () => pm.expect(body).to.be.an('array').with.length.above(0));",
+              "const available = body.find(s => s.status === 'AVAILABLE');",
+              "pm.test('At least one AVAILABLE slot', () => pm.expect(available).to.not.be.undefined);",
+              "pm.collectionVariables.set('slot_id', available.slotId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{base_url}}/api/v1/venues/{{venue_id}}/slots?date={{slot_date}}" }
+      }
+    },
+    {
+      "name": "07 — Create hold",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Generate a UUID v4 for the Idempotency-Key header",
+              "const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+              "    const r = Math.random() * 16 | 0;",
+              "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+              "});",
+              "pm.collectionVariables.set('idempotency_key', uuid);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Create hold returns 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('sessionId present', () => pm.expect(body.sessionId).to.be.a('string').and.not.empty);",
+              "pm.test('holds array non-empty', () => pm.expect(body.holds).to.be.an('array').with.length.above(0));",
+              "pm.collectionVariables.set('session_id', body.sessionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type",    "value": "application/json" },
+          { "key": "Authorization",   "value": "Bearer {{user_token}}" },
+          { "key": "Idempotency-Key", "value": "{{idempotency_key}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"slotIds\": [\"{{slot_id}}\"]}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/holds" }
+      }
+    },
+    {
+      "name": "08 — Confirm booking",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Confirm booking returns 201', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('confirmationNumber present', () => pm.expect(body.confirmationNumber).to.be.a('string').and.not.empty);",
+              "pm.test('confirmationNumber format SL-YYYYMMDD-XXXX', () => {",
+              "    pm.expect(body.confirmationNumber).to.match(/^SL-\\d{8}-\\d{4}$/);",
+              "});",
+              "pm.collectionVariables.set('confirmation_number', body.confirmationNumber);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type",  "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{user_token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"sessionId\": \"{{session_id}}\"}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/bookings" }
+      }
+    },
+    {
+      "name": "09 — Get booking history",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Get history returns 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('History is an array', () => pm.expect(body).to.be.an('array'));",
+              "const cn = pm.collectionVariables.get('confirmation_number');",
+              "const found = body.some(b => b.confirmationNumber === cn);",
+              "pm.test('Booking appears in history', () => pm.expect(found).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+        "url": { "raw": "{{base_url}}/api/v1/bookings" }
+      }
+    },
+    {
+      "name": "10 — Cancel booking",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Cancel returns 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('confirmationNumber matches', () => {",
+              "    const cn = pm.collectionVariables.get('confirmation_number');",
+              "    pm.expect(body.confirmationNumber).to.equal(cn);",
+              "});",
+              "pm.test('cancelledAt present', () => pm.expect(body.cancelledAt).to.be.a('string').and.not.empty);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+        "url": { "raw": "{{base_url}}/api/v1/bookings/{{confirmation_number}}/cancel" }
+      }
+    }
+  ]
+}

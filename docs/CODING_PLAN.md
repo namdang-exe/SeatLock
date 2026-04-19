@@ -33,7 +33,7 @@ Design reference files live in `docs/`. The `docs/INDEX.md` maps every file in t
 | 15 | Frontend: Auth + Browse | NOT STARTED |
 | 16 | Frontend: Booking Flows | NOT STARTED |
 | 17 | Infrastructure (AWS) | COMPLETE |
-| 18 | E2E Tests (AWS) | NOT STARTED |
+| 18 | E2E Tests (AWS) | COMPLETE |
 | 19 | Frontend Deployment | NOT STARTED |
 | 20 | Frontend UI Polish | NOT STARTED |
 
@@ -1529,7 +1529,7 @@ For quick lookup without opening the full design docs:
 
 ## Stage 18 — E2E Tests (AWS)
 
-**Status:** NOT STARTED
+**Status:** ✅ COMPLETE
 
 **Goal:** Add an automated end-to-end test suite that runs the full booking flow against the live ALB after every production deploy. Acts as a smoke-test gate in `release.yml` — if E2E fails, the GitHub release is not published.
 
@@ -1610,3 +1610,11 @@ For quick lookup without opening the full design docs:
 - [ ] Domain error codes (`SLOT_NOT_AVAILABLE`, etc.) show human-readable messages (already in `src/api/errors.ts` — verify wired up consistently)
 - [ ] App is usable on a 375px wide mobile screen
 - [ ] No raw UUIDs or internal IDs visible to users in any view
+
+---
+
+## TODO — Standalone Tasks (not tied to a stage)
+
+| # | Priority | Task | Notes |
+|---|----------|------|-------|
+| TODO-01 | High | Disable AWS CloudWatch by default; enable manually only | CloudWatch log groups and metric alarms are currently always-on in Terraform. Move all `aws_cloudwatch_log_group`, `aws_cloudwatch_metric_alarm`, and related resources behind a `var.enable_cloudwatch` variable (default `false`). Must be explicitly set to `true` to activate. Prevents unexpected billing from log ingestion and storage. |
